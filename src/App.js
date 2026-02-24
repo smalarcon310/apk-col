@@ -1,24 +1,215 @@
-import logo from './logo.svg';
+import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Navbar } from './components/Navbar';
+import { StudentsModule } from './modules/StudentsModule';
+import { CoursesModule } from './modules/CoursesModule';
+import { SubjectsModule } from './modules/SubjectsModule';
+import RectorDashboard from './modules/RectorDashboard';
+import TeachersModule from './modules/TeachersModule';
+import TeacherDashboard from './modules/TeacherDashboard';
+import StudentDashboard from './components/StudentDashboard';
+import Alert from './components/Alert';
+import Login from './components/Login';
+import LoginPage from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
+import { signOut as authSignOut } from './services/authService';
+import { auth } from './config/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { getAllTeachers } from './services/teacherService';
+import { getAllStudents } from './services/studentService';
+import { db } from './config/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import './App.css';
 
+/**
+ * App - Componente raíz de la aplicación
+ * SERMA - Sistema de Gestión Académica
+ */
 function App() {
+  // Estado de autenticación y perfil
+  const [currentTab, setCurrentTab] = useState(null);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState(null);
+
+  const navigate = useNavigate();
+
+  const handleAuthSuccess = async (user, forcedRole = null, extra = {}) => {
+    // Si viene un rol forzado (registro), mapearlo inmediatamente.
+    if (forcedRole) {
+      let profile = null;
+      if (forcedRole === 'teacher') profile = { role: 'teacher', teacherId: extra.teacherId || user.uid, studentId: extra.studentId || null, name: `${extra.firstName || ''} ${extra.lastName || ''}`, documentId: extra.documentId || null, phone: extra.phone || null };
+      else if (forcedRole === 'student') profile = { role: 'student', studentId: extra.studentId || user.uid, name: `${extra.firstName || ''} ${extra.lastName || ''}`, documentId: extra.documentId || null, phone: extra.phone || null };
+      else if (forcedRole === 'rector') profile = { role: 'rector', studentId: extra.studentId || null, name: `${extra.firstName || ''} ${extra.lastName || ''}`, documentId: extra.documentId || null, phone: extra.phone || null };
+      else if (forcedRole === 'guardian' || forcedRole === 'acudiente') profile = { role: 'guardian', name: `${extra.firstName || ''} ${extra.lastName || ''}`, guardianDocumentId: extra.guardianDocumentId || extra.documentId || null, studentDocumentId: extra.studentDocumentId || null, studentId: extra.studentId || null, phone: extra.phone || null, relationship: extra.relationship || null };
+      else profile = { role: forcedRole, name: user.email };
+
+      setCurrentProfile(profile);
+      // Determinar tab inicial
+      if (profile?.role === 'rector') setCurrentTab('rector');
+      else if (profile?.role === 'teacher') setCurrentTab('teacher');
+      else setCurrentTab('students');
+    } else {
+      // No asumir rol aquí: dejar que el listener `onAuthStateChanged` resuelva el rol
+      // simplemente cerrar el modal y navegar; el listener actualizará `currentProfile`.
+      setShowLogin(false);
+    }
+
+    try { navigate('/', { replace: true }); } catch (e) {}
+  };
+
+  // Verificar conexión a Firebase
+  useEffect(() => {
+    let unsub = () => {};
+
+    const resolveRole = async (user) => {
+      if (!user) return null;
+      const email = user.email || '';
+
+      // Comprobar colección 'rectors' en Firestore primero
+      try {
+        const rectorsCol = collection(db, 'rectors');
+        const q = query(rectorsCol, where('email', '==', email));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const r = snap.docs[0].data();
+          return { role: 'rector', name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || email };
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      // Buscar profesor por email
+      try {
+        const teachers = await getAllTeachers();
+        const t = teachers.find((x) => (x.email || '').toLowerCase() === email.toLowerCase());
+        if (t) return { role: 'teacher', teacherId: t.id, name: `${t.firstName || ''} ${t.lastName || ''}` };
+      } catch (e) {
+        // ignore
+      }
+
+      // Buscar estudiante por email
+      try {
+        const students = await getAllStudents();
+        const s = students.find((x) => (x.email || '').toLowerCase() === email.toLowerCase());
+        if (s) return { role: 'student', studentId: s.id, name: `${s.firstName || ''} ${s.lastName || ''}` };
+      } catch (e) {
+        // ignore
+      }
+
+      // Si no se encuentra, comprobar variable de entorno para Rector
+      const rectorEmail = process.env.REACT_APP_RECTOR_EMAIL;
+      if (rectorEmail && email.toLowerCase() === rectorEmail.toLowerCase()) {
+        return { role: 'rector', name: email };
+      }
+
+      // Fallback: si el dominio o correo sugiere rector, marcar como rector
+      if (email.toLowerCase().includes('rector') || email.toLowerCase().includes('admin')) {
+        return { role: 'rector', name: email };
+      }
+
+      // Si no coincide con ninguna, tratar como estudiante por defecto
+      return { role: 'student', name: email };
+    };
+
+    // Escuchar cambios de auth para forzar login inicial
+    unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setCurrentProfile(null);
+        setCurrentTab(null);
+        setShowLogin(false);
+        setAuthLoading(false);
+        return;
+      }
+
+      setShowLogin(false);
+      setAuthLoading(true);
+      const profile = await resolveRole(user);
+      setCurrentProfile(profile);
+      // Navegar según rol
+      if (profile?.role === 'rector') setCurrentTab('rector');
+      else if (profile?.role === 'teacher') setCurrentTab('teacher');
+      else setCurrentTab('students');
+      setAuthLoading(false);
+    });
+
+    const checkConnection = () => {
+      const isOnline = navigator.onLine;
+      if (!isOnline) {
+        setConnectionError('Sin conexión a internet');
+      } else {
+        setConnectionError(null);
+      }
+    };
+
+    checkConnection();
+    window.addEventListener('online', () => setConnectionError(null));
+    window.addEventListener('offline', () => setConnectionError('Sin conexión a internet'));
+
+    return () => {
+      window.removeEventListener('online', () => {});
+      window.removeEventListener('offline', () => {});
+      try { unsub(); } catch (e) {}
+    };
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin mb-4 w-8 h-8 border-4 border-blue-600 rounded-full border-t-transparent"></div>
+          <div>Cargando sesión...</div>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
+      <Route path="/register" element={<RegisterPage onRegisterSuccess={handleAuthSuccess} />} />
+      <Route path="/" element={
+        currentProfile ? (
+          <div className="min-h-screen bg-gray-100">
+            {/* Navbar */}
+            <Navbar currentTab={currentTab} onTabChange={setCurrentTab} currentProfile={currentProfile} onProfileChange={setCurrentProfile} onOpenLogin={() => setShowLogin(true)} onLogout={async () => { try { await authSignOut(); setCurrentProfile(null); setCurrentTab(null); navigate('/login', { replace: true }); } catch (e) { setCurrentProfile(null); setCurrentTab(null); navigate('/login', { replace: true }); } }} />
+
+            {/* Alerta de conexión */}
+            {connectionError && (
+              <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3 text-yellow-800 text-sm">
+                ⚠️ {connectionError} - Los cambios se guardarán localmente
+              </div>
+            )}
+
+            {/* Contenido principal */}
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
+              {currentTab === 'students' && currentProfile?.role === 'student' && <StudentDashboard currentProfile={currentProfile} />}
+              {currentTab === 'students' && currentProfile?.role !== 'student' && <StudentsModule currentProfile={currentProfile} />}
+              {currentTab === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.role === 'teacher' ? currentProfile.teacherId : null} currentProfile={currentProfile} />}
+              {currentTab === 'teachers' && <TeachersModule currentProfile={currentProfile} />}
+              {currentTab === 'courses' && <CoursesModule currentProfile={currentProfile} />}
+              {currentTab === 'subjects' && <SubjectsModule currentProfile={currentProfile} />}
+            </main>
+
+            {/* Footer */}
+            <footer className="bg-white border-t border-gray-200 mt-12">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-sm text-gray-600">
+                <p>
+                  SERMA v1.0 © 2025 - Institución Educativa Bruselas
+                </p>
+                <p className="mt-2">
+                  Sistema de Gestión Académica para la Metodología FRE (Formación Relacional Educativa)
+                </p>
+              </div>
+            </footer>
+          </div>
+        ) : (
+          <Navigate to="/login" replace />
+        )
+      } />
+      <Route path="*" element={<Navigate to={currentProfile ? '/' : '/login'} replace />} />
+    </Routes>
   );
 }
 

@@ -1,0 +1,42 @@
+/**
+ * REGLAS DE SEGURIDAD DE FIRESTORE
+ * Implementar estas reglas en Firebase Console > Firestore > Rules
+ * 
+ * Nota: Estas reglas son para DESARROLLO. 
+ * Para PRODUCCIÓN, implementar validaciones más estrictas
+ */
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ✅ MODO DESARROLLO: Permite todas las operaciones
+    // Para producción, reemplazar con reglas más restrictivas
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+  }
+}
+
+/**
+ * REGLAS RECOMENDADAS PARA PRODUCCIÓN
+ * 
+ * 1. Implementar roles de usuario (admin, teacher, parent, student)
+ * 2. Restricción por institución/escuela
+ * 3. Solo docentes pueden crear/editar/eliminar
+ * 4. Validaciones de datos más estrictas
+ * 5. Auditoría de cambios
+ * 6. Rate limiting para prevenir abuso
+ * 
+ * Ejemplo para producción:
+ * 
+ * match /students/{studentId} {
+ *   allow read: if request.auth.uid in resource.data.allowedUsers;
+ *   allow create: if request.auth.token.role == 'teacher' ||
+ *                    request.auth.token.role == 'admin';
+ *   allow update: if request.auth.token.role == 'teacher' ||
+ *                    request.auth.token.role == 'admin';
+ *   allow delete: if request.auth.token.role == 'admin';
+ * }
+ */
