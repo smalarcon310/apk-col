@@ -63,6 +63,9 @@ const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) 
           <div className="mb-3">
             <div className="text-xs text-gray-500">Estudiante</div>
             <div className="font-medium">{student.firstName} {student.lastName}</div>
+            {student.documentId && (
+              <div className="text-xs text-gray-500">Cédula: {student.documentId}</div>
+            )}
           </div>
 
           <div className="mb-3">

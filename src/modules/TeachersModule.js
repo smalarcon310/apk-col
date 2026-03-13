@@ -9,6 +9,8 @@ const emptyForm = {
   documentId: '',
   email: '',
   phone: '',
+  password: '',
+  confirmPassword: '',
   subjects: '',
 };
 
@@ -44,12 +46,32 @@ export const TeachersModule = ({ currentProfile }) => {
     setLoading(true);
     setError(null);
     setMessage(null);
+    // Validar coincidencia de contraseñas
+    if (form.password !== form.confirmPassword) {
+      setError('Las contraseñas no coinciden');
+      setLoading(false);
+      return;
+    }
     try {
+      // Crear cuenta en Firebase Auth usando el endpoint REST para evitar
+    // que la sesión actual (rector) sea reemplazada por el nuevo usuario.
+    try {
+      const { createUserByEmail } = await import('../services/authAdminService');
+      await createUserByEmail(form.email, form.password);
+    } catch (e) {
+      if (e && e.code === 'EMAIL_EXISTS') {
+        throw new Error('El correo ya está registrado en el sistema.');
+      }
+      throw e;
+    }
+      // marque al profesor como creado por el rector (solo el rector puede usar este módulo)
       const teacher = await createTeacher({
         ...form,
+        // remove password fields before saving (service will strip them)
         subjects: form.subjects ? form.subjects.split(',').map((s) => s.trim()) : [],
+        createdBy: currentProfile && currentProfile.role === 'rector' ? 'rector' : null,
       });
-      setMessage('Profesor creado correctamente');
+      setMessage('Profesor creado correctamente y puede iniciar sesión');
       setTeachers((t) => [teacher, ...t]);
       setForm(emptyForm);
     } catch (err) {
@@ -93,6 +115,8 @@ export const TeachersModule = ({ currentProfile }) => {
               <input name="documentId" placeholder="Documento" value={form.documentId} onChange={handleChange} className="border p-2 rounded" />
               <input name="email" placeholder="Email" value={form.email} onChange={handleChange} className="border p-2 rounded" />
               <input name="phone" placeholder="Teléfono" value={form.phone} onChange={handleChange} className="border p-2 rounded" />
+              <input name="password" type="password" placeholder="Contraseña" value={form.password} onChange={handleChange} className="border p-2 rounded" />
+              <input name="confirmPassword" type="password" placeholder="Confirmar contraseña" value={form.confirmPassword} onChange={handleChange} className="border p-2 rounded" />
               <input name="subjects" placeholder="Materias (separadas por coma)" value={form.subjects} onChange={handleChange} className="border p-2 rounded col-span-2" />
             </div>
 

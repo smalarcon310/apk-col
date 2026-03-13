@@ -1,34 +1,145 @@
 import React, { useEffect, useState } from 'react';
 import { Award, Target, CheckCircle, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { getAllSubjects } from '../services/subjectService';
+import {
+  getAdvancesByStudentAndSubject,
+} from '../services/avanceService';
+import { getStudentById } from '../services/studentService';
+import { db, auth } from '../config/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 const StudentDashboard = ({ currentProfile }) => {
   const [studentData, setStudentData] = useState(null);
 
-  // Datos de ejemplo - En producción, estos vendrían de Firestore
   useEffect(() => {
-    const mockData = {
-      name: currentProfile?.name || 'Estudiante',
-      grade: '10°B',
-      studentId: '2024-10-156',
-      averageGrade: 4.2,
-      currentProgress: 78,
-      attendance: 95,
-      weekProgress: 12,
-      subjects: [
-        { name: 'Matemáticas', current: 92, previous: 85, change: '+7%' },
-        { name: 'Ciencias', current: 88, previous: 82, change: '+6%' },
-        { name: 'Español', current: 78, previous: 84, change: '-6%' },
-        { name: 'Inglés', current: 85, previous: 79, change: '+6%' },
-        { name: 'Sociales', current: 90, previous: 88, change: '+2%' },
-        { name: 'Ed. Física', current: 92, previous: 90, change: '+2%' },
-      ],
-      motivationMessage: '¡Excelente Progreso! Has mejorado tu avance en 13% este semestre (de 65% a 78%). Continúa así para alcanzar el 100% en todas las materias. Tu constancia y dedicación se reflejan en tus resultados.',
+    // attempt to determine a valid studentId even if profile lacked one
+    const resolveAndLoad = async () => {
+      let studentId = currentProfile?.studentId;
+      if (!studentId) {
+        // try by auth UID or documentId
+        try {
+          const students = await import('../services/studentService').then((m) => m.getAllStudents());
+          const uid = auth.currentUser?.uid;
+          const docId = currentProfile?.documentId;
+          const found = students.find(
+            (s) => s.authUid === uid || (docId && s.documentId === docId)
+          );
+          studentId = found?.id;
+          if (found && !currentProfile.studentId) {
+            // update profile object locally for future use
+            currentProfile.studentId = studentId;
+          }
+          // if we matched and the student record lacks authUid, persist it
+          if (found && found.id && !found.authUid && auth.currentUser?.uid) {
+            try {
+              const { updateStudent } = await import('../services/studentService');
+              await updateStudent(found.id, { authUid: auth.currentUser.uid });
+            } catch (e) {
+              console.warn('No se pudo guardar authUid en student:', e);
+            }
+          }
+        } catch (e) {
+          console.warn('No se pudo resolver studentId automáticamente:', e);
+        }
+      }
+
+      if (!studentId) {
+        setStudentData({ error: 'No se encontró tu perfil como estudiante. Contacta al administrador.' });
+        return;
+      }
+
+      const loadData = async () => {
+        try {
+          const studentInfo = await getStudentById(studentId).catch(() => null);
+          const subjects = await getAllSubjects();
+          const rows = await Promise.all(
+            subjects.map(async (subj) => {
+              let advances = await getAdvancesByStudentAndSubject(studentId, subj.id);
+              advances = advances.filter((a) => a.status === 'published');
+              let current = 0;
+              let previous = 0;
+              if (advances && advances.length > 0) {
+                const last = advances[advances.length - 1];
+                current = last.progress ?? last.average ?? 0;
+                if (advances.length > 1) {
+                  const prev = advances[advances.length - 2];
+                  previous = prev.progress ?? prev.average ?? 0;
+                }
+              }
+              const changeVal = current - previous;
+              const changeStr =
+                changeVal > 0
+                  ? `+${changeVal}%`
+                  : changeVal < 0
+                  ? `${changeVal}%`
+                  : '0%';
+              return {
+                name: subj.name,
+                current,
+                previous,
+                change: changeStr,
+              };
+            })
+          );
+
+          const avgProgress =
+            rows.length > 0
+              ? Math.round(rows.reduce((sum, r) => sum + r.current, 0) / rows.length)
+              : 0;
+          const avgPrevious =
+            rows.length > 0
+              ? Math.round(rows.reduce((sum, r) => sum + r.previous, 0) / rows.length)
+              : 0;
+
+          setStudentData({
+            name:
+              (studentInfo && `${studentInfo.firstName} ${studentInfo.lastName}`) ||
+              currentProfile?.name ||
+              'Estudiante',
+            grade: studentInfo?.grade ? `Grado ${studentInfo.grade}` : '',
+            studentId:
+              studentInfo?.documentId || studentInfo?.id || studentId || '',
+            averageGrade: studentInfo?.averageGrade || 0,
+            currentProgress: avgProgress,
+            attendance: studentInfo?.attendance || 0,
+            weekProgress: avgProgress - avgPrevious,
+            subjects: rows,
+            motivationMessage:
+              avgProgress > 0
+                ? `Tu avance promedio actual es ${avgProgress}%. Sigue esforzándote para mejorar.`
+                : 'Aún no hay avances publicados por tu docente.',
+          });
+        } catch (err) {
+          console.error('Error cargando datos del estudiante:', err);
+        }
+      };
+
+      loadData();
+
+      const q = query(
+        collection(db, 'avances'),
+        where('studentId', '==', studentId),
+        where('status', '==', 'published')
+      );
+      const unsubscribe = onSnapshot(q, loadData);
+      return unsubscribe;
     };
-    setStudentData(mockData);
+
+    const unsubscribePromise = resolveAndLoad();
+    // handle cleanup if effect re-runs
+    return () => {
+      if (typeof unsubscribePromise.then === 'function') {
+        unsubscribePromise.then((u) => u && u());
+      }
+    };
   }, [currentProfile]);
 
   if (!studentData) return <div className="p-6">Cargando...</div>;
+
+  if (studentData.error) {
+    return <div className="p-6 text-red-600">{studentData.error}</div>;
+  }
 
   const comparisonData = studentData.subjects.map((s) => ({
     name: s.name,
@@ -173,16 +284,18 @@ const StudentDashboard = ({ currentProfile }) => {
       </div>
 
       {/* Mensaje de motivación */}
-      <div
-        className="rounded-lg text-white p-6 flex items-start gap-4"
-        style={{ background: 'linear-gradient(135deg, #1e90ff 0%, #10b981 100%)' }}
-      >
-        <TrendingUp className="w-8 h-8 flex-shrink-0 mt-1" />
-        <div>
-          <h4 className="text-lg font-semibold mb-2">¡Excelente Progreso!</h4>
-          <p className="text-sm opacity-90">{studentData.motivationMessage}</p>
+      {studentData.motivationMessage && (
+        <div
+          className="rounded-lg text-white p-6 flex items-start gap-4"
+          style={{ background: 'linear-gradient(135deg, #1e90ff 0%, #10b981 100%)' }}
+        >
+          <TrendingUp className="w-8 h-8 flex-shrink-0 mt-1" />
+          <div>
+            <h4 className="text-lg font-semibold mb-2">¡Excelente Progreso!</h4>
+            <p className="text-sm opacity-90">{studentData.motivationMessage}</p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

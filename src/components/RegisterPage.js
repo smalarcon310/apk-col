@@ -16,7 +16,31 @@ const RegisterPage = ({ onRegisterSuccess }) => {
   const [phone, setPhone] = useState('');
   const [emailExists, setEmailExists] = useState(false);
   const [resetSent, setResetSent] = useState(false);
-  const role = 'student';
+  const [role, setRole] = useState('student');
+  const [studentMatch, setStudentMatch] = useState(null);
+
+  // whenever the cédula changes we check for existing student
+  React.useEffect(() => {
+    let active = true;
+    const check = async () => {
+      if (!documentId) {
+        setStudentMatch(null);
+        setRole('student');
+        return;
+      }
+      try {
+        const s = await getStudentByDocument(documentId);
+        if (!active) return;
+        setStudentMatch(s);
+        if (s) setRole('guardian');
+        else setRole('student');
+      } catch (e) {
+        console.warn('Error buscando estudiante por cédula:', e);
+      }
+    };
+    check();
+    return () => { active = false; };
+  }, [documentId]);
 
   const submit = async (e) => {
     e && e.preventDefault();
@@ -31,22 +55,39 @@ const RegisterPage = ({ onRegisterSuccess }) => {
       // Build extra profile data
       const extra = { firstName, lastName, documentId, phone };
 
-      // Create a student profile in Firestore (all users are students)
+      // Create associated academic profile depending on role
       try {
-        let existingStudent = null;
-        if (documentId) {
-          existingStudent = await getStudentByDocument(documentId);
-        }
-        if (existingStudent) {
-          extra.studentId = existingStudent.id;
-        } else {
-          const courseId = 'default';
-          const grade = '6';
-          const savedStudent = await createStudent({ firstName, lastName, documentId, email, phone, courseId, grade });
-          extra.studentId = savedStudent.id;
+        if (role === 'student') {
+          let existingStudent = null;
+          if (documentId) {
+            existingStudent = await getStudentByDocument(documentId);
+          }
+          if (existingStudent) {
+            extra.studentId = existingStudent.id;
+          } else {
+            const courseId = 'default';
+            const grade = '6';
+            const savedStudent = await createStudent({ firstName, lastName, documentId, phone, courseId, grade, authUid: user.uid });
+            extra.studentId = savedStudent.id;
+          }
+        } else if (role === 'guardian') {
+          // link parent to student by cédula ingresada en el campo
+          const child = await getStudentByDocument(documentId);
+          if (child) {
+            extra.studentId = child.id;
+            extra.studentDocumentId = documentId;
+            try {
+              const { createGuardian } = await import('../services/guardianService');
+              await createGuardian(user.uid, child.id);
+            } catch (e) {
+              console.warn('Error creando registro de guardián:', e);
+            }
+          } else {
+            console.warn('No se encontró estudiante con cédula', documentId);
+          }
         }
       } catch (e) {
-        console.warn('Advertencia al crear estudiante:', e.message);
+        console.warn('Advertencia al crear perfil:', e.message);
       }
 
       onRegisterSuccess && onRegisterSuccess(user, role, extra);
@@ -100,6 +141,17 @@ const RegisterPage = ({ onRegisterSuccess }) => {
             <label className="text-sm text-gray-600">Cédula</label>
             <input value={documentId} onChange={(e) => setDocumentId(e.target.value)} placeholder="Número de cédula" required className="w-full border rounded px-3 py-2" />
           </div>
+          {studentMatch && (
+            <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded text-sm">
+              <strong>Estudiante encontrado:</strong> {studentMatch.firstName} {studentMatch.lastName}
+              {studentMatch.grade ? ` - Grado ${studentMatch.grade}` : ''}
+            </div>
+          )}
+          {role === 'guardian' && studentMatch && (
+            <div className="mb-3 text-sm text-blue-600">
+              La cédula coincide con un estudiante registrado; se creará una cuenta de acudiente vinculada a ese alumno.
+            </div>
+          )}
           <div className="mb-3">
             <label className="text-sm text-gray-600">Celular</label>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Número de celular" required className="w-full border rounded px-3 py-2" />

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
-import { StudentsModule } from './modules/StudentsModule';
 import { CoursesModule } from './modules/CoursesModule';
 import { SubjectsModule } from './modules/SubjectsModule';
 import RectorDashboard from './modules/RectorDashboard';
@@ -80,25 +79,59 @@ function App() {
         // ignore
       }
 
-      // Buscar profesor por email
+      // Buscar profesor por email (solo si fue creado por el rector)
       try {
         const teachers = await getAllTeachers();
-        const t = teachers.find((x) => (x.email || '').toLowerCase() === email.toLowerCase());
+        const t = teachers.find((x) => {
+          if ((x.email || '').toLowerCase() !== email.toLowerCase()) return false;
+          // sólo los docentes generados por el rector tienen acceso al panel
+          return x.createdBy === 'rector';
+        });
         if (t) return { role: 'teacher', teacherId: t.id, name: `${t.firstName || ''} ${t.lastName || ''}` };
       } catch (e) {
         // ignore
       }
 
-      // Buscar estudiante por email
+      // Si el documento del estudiante contiene el UID del usuario, buscar
+      // por ese campo. De esta manera no dependemos del email, el cual ya
+      // no se almacena en el perfil.
       try {
         const students = await getAllStudents();
-        const s = students.find((x) => (x.email || '').toLowerCase() === email.toLowerCase());
-        if (s) return { role: 'student', studentId: s.id, name: `${s.firstName || ''} ${s.lastName || ''}` };
+        const s = students.find((x) => x.authUid === user.uid);
+        if (s) {
+          return {
+            role: 'student',
+            studentId: s.id,
+            name: `${s.firstName || ''} ${s.lastName || ''}`,
+            documentId: s.documentId || null,
+            authUid: s.authUid || null,
+          };
+        }
+        // if no student by UID, maybe the user is a guardian previously linked
+        // (guardians collection may not exist on older installs but import is safe)
+        try {
+          const { getGuardianByUid } = await import('./services/guardianService');
+          const g = await getGuardianByUid(user.uid);
+          if (g && g.studentId) {
+            const s2 = students.find((x) => x.id === g.studentId);
+            const profName = s2 ? `${s2.firstName || ''} ${s2.lastName || ''}` : email;
+            return {
+              role: 'guardian',
+              studentId: g.studentId,
+              name: profName,
+              guardianDocumentId: null,
+              studentDocumentId: s2 ? s2.documentId || null : null,
+            };
+          }
+        } catch (inner) {
+          // ignore if service missing or error
+        }
       } catch (e) {
         // ignore
       }
 
-      // Si no se encuentra, comprobar variable de entorno para Rector
+      // Si no se encuentra por ninguno de los métodos previos, 
+      // comprobar variable de entorno para Rector
       const rectorEmail = process.env.REACT_APP_RECTOR_EMAIL;
       if (rectorEmail && email.toLowerCase() === rectorEmail.toLowerCase()) {
         return { role: 'rector', name: email };
@@ -184,9 +217,10 @@ function App() {
             {/* Contenido principal */}
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
-              {currentTab === 'students' && currentProfile?.role === 'student' && <StudentDashboard currentProfile={currentProfile} />}
-              {currentTab === 'students' && currentProfile?.role !== 'student' && <StudentsModule currentProfile={currentProfile} />}
-              {currentTab === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.role === 'teacher' ? currentProfile.teacherId : null} currentProfile={currentProfile} />}
+              {currentTab === 'students' && (
+                <StudentDashboard currentProfile={currentProfile} />
+              )}
+              {currentTab === 'teacher' && currentProfile?.role === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.teacherId} currentProfile={currentProfile} />}
               {currentTab === 'teachers' && <TeachersModule currentProfile={currentProfile} />}
               {currentTab === 'courses' && <CoursesModule currentProfile={currentProfile} />}
               {currentTab === 'subjects' && <SubjectsModule currentProfile={currentProfile} />}

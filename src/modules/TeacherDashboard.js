@@ -24,7 +24,8 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
   const loadData = async () => {
     try {
       const [t, s, st, c] = await Promise.all([getAllTeachers(), getAllSubjects(), getAllStudents(), getAllCourses()]);
-      setTeachers(t || []);
+      // only keep teachers created by the rector (others shouldn't have a panel)
+      setTeachers((t || []).filter((x) => x.createdBy === 'rector'));
       setSubjects(s || []);
       setStudents(st || []);
       setCourses(c || []);
@@ -180,12 +181,26 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
         <div className="bg-white p-4 rounded shadow">
           <h3 className="font-semibold mb-2">Mis Estudiantes</h3>
           <div className="text-sm text-gray-500 mb-3">Gestiona el avance académico</div>
-          <input placeholder="Buscar estudiante..." value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="w-full border p-2 rounded mb-3" />
+          <input placeholder="Buscar estudiante o cédula..." value={studentSearch} onChange={(e) => {
+              const v = e.target.value;
+              setStudentSearch(v);
+              // if user typed an exact cedula, auto-select student
+              const match = students.find((s) => s.documentId === v);
+              if (match) {
+                setSelectedStudent(match);
+              }
+            }} className="w-full border p-2 rounded mb-3" />
           <div className="space-y-2 max-h-96 overflow-auto">
-            {students.filter(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(studentSearch.toLowerCase())).map((st) => (
+            {students.filter(s => {
+              const fullname = `${s.firstName} ${s.lastName}`.toLowerCase();
+              const term = studentSearch.toLowerCase();
+              return fullname.includes(term) || (s.documentId && s.documentId.includes(term));
+            }).map((st) => (
               <div key={st.id} onClick={() => setSelectedStudent(st)} className={`p-3 rounded border ${selectedStudent && selectedStudent.id === st.id ? 'ring-2 ring-blue-300' : ''} cursor-pointer`}> 
                 <div className="font-medium">{st.firstName} {st.lastName}</div>
-                <div className="text-xs text-gray-500">{st.course || st.grade || 'Grado'} - Promedio: {st.average || '--'}</div>
+                <div className="text-xs text-gray-500">
+                  {st.documentId ? `Cédula: ${st.documentId} • ` : ''}{st.course || st.grade || 'Grado'} - Promedio: {st.average || '--'}
+                </div>
               </div>
             ))}
           </div>

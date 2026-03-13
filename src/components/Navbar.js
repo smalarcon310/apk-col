@@ -2,27 +2,13 @@
  * SERMA - Navbar Component
  */
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Users, BookOpen, BookMarked, LayoutDashboard } from 'lucide-react';
-import { getAllTeachers } from '../services/teacherService';
 
 /**
  * Navbar - Barra de navegación superior
  */
 export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChange, onOpenLogin, onLogout }) => {
-  const [teachers, setTeachers] = useState([]);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const t = await getAllTeachers();
-        setTeachers(t || []);
-      } catch (err) {
-        setTeachers([]);
-      }
-    };
-    load();
-  }, []);
 
   const allTabs = [
     { id: 'rector', label: 'Rector', icon: LayoutDashboard },
@@ -33,7 +19,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
     { id: 'subjects', label: 'Materias', icon: BookMarked },
   ];
 
-  // Filtrar pestañas por rol (el rector ve todos los módulos)
+  // Filtrar pestañas por rol
   const tabs = allTabs.filter((t) => {
     if (!currentProfile) return true;
     if (currentProfile.role === 'teacher') {
@@ -44,23 +30,15 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
       // Estudiante: ver solo su dashboard
       return t.id === 'students';
     }
-    // Rector y otros roles ven todos los módulos
-    return true;
+    if (currentProfile.role === 'rector') {
+      // Rector: no necesita acceder al panel docente, ese es para cada profesor
+      // (puede administrar profesores desde el módulo correspondiente)
+      return t.id !== 'teacher';
+    }
+    // Otros roles por defecto ven todas las pestañas excepto la docente
+    return t.id !== 'teacher';
   });
 
-  const handleProfileChange = (e) => {
-    const val = e.target.value;
-    if (val === 'rector') {
-      onProfileChange && onProfileChange({ role: 'rector' });
-      onTabChange && onTabChange('rector');
-    } else {
-      const teacher = teachers.find((t) => t.id === val);
-      if (teacher) {
-        onProfileChange && onProfileChange({ role: 'teacher', teacherId: teacher.id, name: `${teacher.firstName} ${teacher.lastName}` });
-        onTabChange && onTabChange('teacher');
-      }
-    }
-  };
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200">
@@ -75,22 +53,8 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
             <span className="text-xs text-gray-500 ml-2">Sistema de Gestión Académica</span>
           </div>
 
-          {/* Perfil selector y acciones de sesión */}
+          {/* Acciones de sesión */}
           <div className="text-sm text-gray-600 flex items-center gap-3">
-            {/* Selector de perfil: solo visible para Rector (para ver perfiles de docentes) */}
-            {currentProfile?.role === 'rector' && (
-              <select
-                value={currentProfile?.role === 'teacher' ? currentProfile.teacherId || '' : 'rector'}
-                onChange={handleProfileChange}
-                className="border rounded px-3 py-1"
-              >
-                <option value="rector">Rector</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
-                ))}
-              </select>
-            )}
-
             {/* Botón Logout si hay sesión, sino botón para abrir login */}
             {currentProfile ? (
               <button onClick={() => onLogout && onLogout()} className="text-sm text-gray-600 px-3 py-1 border rounded">Cerrar sesión</button>

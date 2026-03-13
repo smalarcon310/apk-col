@@ -33,8 +33,12 @@ export const createTeacher = async (teacherData) => {
       throw new Error('Ya existe un profesor con este documento');
     }
 
+    // We purposely do not persist the password in Firestore;
+    // authentication is handled by Firebase Auth.  Make a copy of the
+    // teacher data without the password field.
+    const { password, confirmPassword, ...cleanData } = teacherData;
     const dataToSave = {
-      ...teacherData,
+      ...cleanData,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
@@ -144,10 +148,12 @@ function validateTeacherData(data, isPartial = false) {
     if (!data.documentId || !validateDocument(data.documentId)) errors.push('Documento inválido');
     if (!data.email || !validateEmail(data.email)) errors.push('Email inválido');
     if (!data.phone || !validatePhone(data.phone)) errors.push('Teléfono inválido');
+    // password is not validated here; authentication lives in Firebase Auth
   } else {
     if (data.documentId !== undefined && !validateDocument(data.documentId)) errors.push('Documento inválido');
     if (data.email !== undefined && !validateEmail(data.email)) errors.push('Email inválido');
     if (data.phone !== undefined && !validatePhone(data.phone)) errors.push('Teléfono inválido');
+    // ignore password on partial updates
   }
   return { isValid: errors.length === 0, errors };
 }
