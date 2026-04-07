@@ -7,7 +7,7 @@
 // manner (especially after build/time‑of‑execution).  Previously we were
 // falling back to `firebaseConfig?.options?.apiKey` which occasionally
 // produced `undefined` resulting in invalid key errors.
-import app, { firebaseConfigObject } from '../config/firebase';
+import { firebaseConfigObject } from '../config/firebase';
 
 // Prefer explicit environment variable (useful for CI / deploys), then
 // try the static config export.  We avoid inspecting the `app` object
@@ -66,4 +66,6 @@ export async function createUserByEmail(email, password) {
   return data;
 }
 
-export default { createUserByEmail };
+const authAdminService = { createUserByEmail };
+
+export default authAdminService;

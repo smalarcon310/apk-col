@@ -98,7 +98,6 @@ export const getAllStudents = async () => {
  */
 export const getStudentById = async (studentId) => {
   try {
-    const docRef = doc(db, STUDENTS_COLLECTION, studentId);
     const docSnap = await getDocs(collection(db, STUDENTS_COLLECTION));
     
     let student = null;
@@ -283,7 +282,7 @@ function validateStudentData(data, isPartial = false) {
     if (!data.grade || !['6', '7', '8', '9', '10', '11'].includes(data.grade)) {
       errors.push('Grado inválido (debe ser 6-11)');
     }
-    if (!data.email || !validateEmail(data.email)) {
+    if (data.email && !validateEmail(data.email)) {
       errors.push('Email inválido');
     }
     if (!data.phone || !validatePhone(data.phone)) {
@@ -306,7 +305,7 @@ function validateStudentData(data, isPartial = false) {
     if (data.grade !== undefined && !['6', '7', '8', '9', '10', '11'].includes(data.grade)) {
       errors.push('Grado inválido (debe ser 6-11)');
     }
-    if (data.email !== undefined && !validateEmail(data.email)) {
+    if (data.email !== undefined && data.email !== '' && !validateEmail(data.email)) {
       errors.push('Email inválido');
     }
     if (data.phone !== undefined && !validatePhone(data.phone)) {

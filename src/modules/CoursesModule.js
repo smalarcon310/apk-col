@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
 import Alert from '../components/Alert';

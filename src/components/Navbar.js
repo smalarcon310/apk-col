@@ -12,7 +12,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
 
   const allTabs = [
     { id: 'rector', label: 'Rector', icon: LayoutDashboard },
-    { id: 'students', label: 'Estudiantes', icon: Users },
+    { id: 'students', label: 'Estudiante', icon: Users },
     { id: 'teacher', label: 'Docente', icon: Users },
     { id: 'teachers', label: 'Profesores', icon: Users },
     { id: 'courses', label: 'Cursos', icon: BookOpen },
@@ -28,6 +28,10 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
     }
     if (currentProfile.role === 'student') {
       // Estudiante: ver solo su dashboard
+      return t.id === 'students';
+    }
+    if (currentProfile.role === 'guardian') {
+      // Acudiente: ver solo el dashboard del estudiante vinculado
       return t.id === 'students';
     }
     if (currentProfile.role === 'rector') {

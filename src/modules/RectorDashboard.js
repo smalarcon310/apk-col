@@ -4,33 +4,11 @@ import { getAllCourses } from '../services/courseService';
 import { getAllSubjects } from '../services/subjectService';
 import { getLatestAdvanceForStudentSubject } from '../services/avanceService';
 
-/**
- * RectorDashboard - Vista principal para el Rector
- * Muestra métricas clave: totales de estudiantes, cursos y materias
- */
-import { createCourse } from '../services/courseService';
-import { createSubject } from '../services/subjectService';
-import { createStudent } from '../services/studentService';
-
 export const RectorDashboard = ({ currentProfile }) => {
   const [studentsCount, setStudentsCount] = useState(0);
-  const [courseName, setCourseName] = useState('');
-  const [subjectName, setSubjectName] = useState('');
-  const [courseMsg, setCourseMsg] = useState('');
-  const [subjectMsg, setSubjectMsg] = useState('');
   const [coursesCount, setCoursesCount] = useState(0);
   const [subjectsCount, setSubjectsCount] = useState(0);
-  const [coursesList, setCoursesList] = useState([]); // para el formulario de estudiante
   const [recentStudents, setRecentStudents] = useState([]);
-
-  // campos y mensajes para crear estudiante desde panel rector
-  const [newFirstName, setNewFirstName] = useState('');
-  const [newLastName, setNewLastName] = useState('');
-  const [newDocument, setNewDocument] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newGrade, setNewGrade] = useState('6');
-  const [newCourseId, setNewCourseId] = useState('');
-  const [studentMsg, setStudentMsg] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [distribution, setDistribution] = useState([0,0,0,0,0]);
@@ -52,7 +30,6 @@ export const RectorDashboard = ({ currentProfile }) => {
         setStudentsCount(students.length);
         setCoursesCount(courses.length);
         setSubjectsCount(subjects.length);
-        setCoursesList(courses); // guardar lista para selección de estudiante
 
         // Mostrar hasta 5 estudiantes recientes (por createdAt si existe)
         const sorted = students
@@ -136,60 +113,6 @@ export const RectorDashboard = ({ currentProfile }) => {
   if (loading) {
     return <div className="text-center py-10">Cargando panel del Rector...</div>;
   }
-  // Funciones para crear curso y materia
-  const handleCreateCourse = async (e) => {
-    e.preventDefault();
-    setCourseMsg('');
-    try {
-      await createCourse({ name: courseName });
-      setCourseMsg('Curso creado exitosamente');
-      setCourseName('');
-    } catch (err) {
-      setCourseMsg('Error creando curso');
-    }
-  };
-  const handleCreateSubject = async (e) => {
-    e.preventDefault();
-    setSubjectMsg('');
-    try {
-      await createSubject({ name: subjectName });
-      setSubjectMsg('Materia creada exitosamente');
-      setSubjectName('');
-    } catch (err) {
-      setSubjectMsg('Error creando materia');
-    }
-  };
-
-  const handleCreateStudent = async (e) => {
-    e.preventDefault();
-    setStudentMsg('');
-    try {
-      const created = await createStudent({
-        firstName: newFirstName,
-        lastName: newLastName,
-        documentId: newDocument,
-        phone: newPhone,
-        grade: newGrade,
-        courseId: newCourseId,
-      });
-      setStudentMsg('Estudiante creado exitosamente');
-      setNewFirstName('');
-      setNewLastName('');
-      setNewDocument('');
-      setNewPhone('');
-      setNewGrade('6');
-      setNewCourseId('');
-      // actualizar métricas locales sin recarga completa
-      setStudentsCount((c) => c + 1);
-      setRecentStudents((list) => {
-        const newEntry = { id: created.id, ...created };
-        const updated = [newEntry, ...list];
-        return updated.slice(0, 5);
-      });
-    } catch (err) {
-      setStudentMsg(err.message || 'Error creando estudiante');
-    }
-  };
 
   return (
     <div>
@@ -299,71 +222,6 @@ export const RectorDashboard = ({ currentProfile }) => {
         </div>
       </div>
 
-      {/* formulario para crear estudiantes (visible al rector) */}
-      <div className="bg-white shadow rounded-lg p-6 mb-6">
-        <h3 className="text-lg font-semibold mb-4">Crear nuevo estudiante</h3>
-        {studentMsg && <div className="mb-3 text-sm text-green-600">{studentMsg}</div>}
-        <form onSubmit={handleCreateStudent} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input
-            value={newFirstName}
-            onChange={(e) => setNewFirstName(e.target.value)}
-            placeholder="Nombre"
-            required
-            className="border rounded px-3 py-2"
-          />
-          <input
-            value={newLastName}
-            onChange={(e) => setNewLastName(e.target.value)}
-            placeholder="Apellido"
-            required
-            className="border rounded px-3 py-2"
-          />
-          <input
-            value={newDocument}
-            onChange={(e) => setNewDocument(e.target.value)}
-            placeholder="Documento"
-            required
-            className="border rounded px-3 py-2"
-          />
-          <input
-            value={newPhone}
-            onChange={(e) => setNewPhone(e.target.value)}
-            placeholder="Teléfono"
-            required
-            className="border rounded px-3 py-2"
-          />
-          <select
-            value={newGrade}
-            onChange={(e) => setNewGrade(e.target.value)}
-            className="border rounded px-3 py-2"
-            required
-          >
-            <option value="6">Grado 6</option>
-            <option value="7">Grado 7</option>
-            <option value="8">Grado 8</option>
-            <option value="9">Grado 9</option>
-            <option value="10">Grado 10</option>
-            <option value="11">Grado 11</option>
-          </select>
-          <select
-            value={newCourseId}
-            onChange={(e) => setNewCourseId(e.target.value)}
-            className="border rounded px-3 py-2"
-            required
-          >
-            <option value="">Seleccione Curso</option>
-            {coursesList.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <div className="md:col-span-2">
-            <button
-              type="submit"
-              className="w-full py-2 bg-blue-600 text-white rounded"
-            >Crear estudiante</button>
-          </div>
-        </form>
-      </div>
       {/* estadísticas generales */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white shadow rounded-lg p-4">

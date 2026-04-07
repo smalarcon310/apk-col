@@ -215,10 +215,12 @@ export const Button = ({
   );
 };
 
-export default {
+const formInputs = {
   TextInput,
   SelectInput,
   TextArea,
   SearchInput,
   Button,
 };
+
+export default formInputs;

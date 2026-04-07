@@ -264,14 +264,6 @@ export const getAdvancesByTeacher = async (teacherId) => {
   }
 };
 
-function calculateAverage(data) {
-  // Only use the single `progress` field (or `avance` alias).
-  if (!data) return 0;
-  const raw = data.progress !== undefined && data.progress !== null ? data.progress : data.avance;
-  const p = Number(raw || 0);
-  return Math.round(p * 100) / 100;
-}
-
 function slugify(s) {
   if (!s) return '';
   return s
@@ -283,7 +275,7 @@ function slugify(s) {
     .replace(/^_+|_+$/g, '');
 }
 
-export default {
+const avanceService = {
   createAdvance,
   getAdvancesBySubject,
   getAdvancesByStudentAndSubject,
@@ -291,3 +283,5 @@ export default {
   updateAdvance,
   getAdvancesByTeacher,
 };
+
+export default avanceService;

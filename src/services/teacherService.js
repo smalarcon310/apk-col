@@ -158,10 +158,12 @@ function validateTeacherData(data, isPartial = false) {
   return { isValid: errors.length === 0, errors };
 }
 
-export default {
+const teacherService = {
   createTeacher,
   getAllTeachers,
   getTeacherById,
   updateTeacher,
   deleteTeacher,
 };
+
+export default teacherService;

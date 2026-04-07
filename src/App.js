@@ -6,9 +6,8 @@ import { SubjectsModule } from './modules/SubjectsModule';
 import RectorDashboard from './modules/RectorDashboard';
 import TeachersModule from './modules/TeachersModule';
 import TeacherDashboard from './modules/TeacherDashboard';
+import { StudentsModule } from './modules/StudentsModule';
 import StudentDashboard from './components/StudentDashboard';
-import Alert from './components/Alert';
-import Login from './components/Login';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import { signOut as authSignOut } from './services/authService';
@@ -28,7 +27,7 @@ function App() {
   // Estado de autenticación y perfil
   const [currentTab, setCurrentTab] = useState(null);
   const [currentProfile, setCurrentProfile] = useState(null);
-  const [showLogin, setShowLogin] = useState(false);
+  const [, setShowLogin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(null);
 
@@ -61,6 +60,7 @@ function App() {
   // Verificar conexión a Firebase
   useEffect(() => {
     let unsub = () => {};
+    let isMounted = true;
 
     const resolveRole = async (user) => {
       if (!user) return null;
@@ -146,26 +146,38 @@ function App() {
       return { role: 'student', name: email };
     };
 
-    // Escuchar cambios de auth para forzar login inicial
-    unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setCurrentProfile(null);
-        setCurrentTab(null);
-        setShowLogin(false);
-        setAuthLoading(false);
-        return;
+    // Forzar cierre de sesión al iniciar para que siempre arranque en login
+    const initializeAuth = async () => {
+      try {
+        await authSignOut();
+      } catch (e) {
+        // ignore
       }
 
-      setShowLogin(false);
-      setAuthLoading(true);
-      const profile = await resolveRole(user);
-      setCurrentProfile(profile);
-      // Navegar según rol
-      if (profile?.role === 'rector') setCurrentTab('rector');
-      else if (profile?.role === 'teacher') setCurrentTab('teacher');
-      else setCurrentTab('students');
-      setAuthLoading(false);
-    });
+      if (!isMounted) return;
+
+      unsub = onAuthStateChanged(auth, async (user) => {
+        if (!user) {
+          setCurrentProfile(null);
+          setCurrentTab(null);
+          setShowLogin(false);
+          setAuthLoading(false);
+          return;
+        }
+
+        setShowLogin(false);
+        setAuthLoading(true);
+        const profile = await resolveRole(user);
+        setCurrentProfile(profile);
+        // Navegar según rol
+        if (profile?.role === 'rector') setCurrentTab('rector');
+        else if (profile?.role === 'teacher') setCurrentTab('teacher');
+        else setCurrentTab('students');
+        setAuthLoading(false);
+      });
+    };
+
+    initializeAuth();
 
     const checkConnection = () => {
       const isOnline = navigator.onLine;
@@ -181,6 +193,7 @@ function App() {
     window.addEventListener('offline', () => setConnectionError('Sin conexión a internet'));
 
     return () => {
+      isMounted = false;
       window.removeEventListener('online', () => {});
       window.removeEventListener('offline', () => {});
       try { unsub(); } catch (e) {}
@@ -216,14 +229,18 @@ function App() {
 
             {/* Contenido principal */}
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
-              {currentTab === 'students' && (
+              {currentProfile?.role === 'student' || currentProfile?.role === 'guardian' ? (
                 <StudentDashboard currentProfile={currentProfile} />
+              ) : (
+                <>
+                  {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
+                  {currentTab === 'students' && <StudentsModule currentProfile={currentProfile} />}
+                  {currentTab === 'teacher' && currentProfile?.role === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.teacherId} currentProfile={currentProfile} />}
+                  {currentTab === 'teachers' && <TeachersModule currentProfile={currentProfile} />}
+                  {currentTab === 'courses' && <CoursesModule currentProfile={currentProfile} />}
+                  {currentTab === 'subjects' && <SubjectsModule currentProfile={currentProfile} />}
+                </>
               )}
-              {currentTab === 'teacher' && currentProfile?.role === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.teacherId} currentProfile={currentProfile} />}
-              {currentTab === 'teachers' && <TeachersModule currentProfile={currentProfile} />}
-              {currentTab === 'courses' && <CoursesModule currentProfile={currentProfile} />}
-              {currentTab === 'subjects' && <SubjectsModule currentProfile={currentProfile} />}
             </main>
 
             {/* Footer */}

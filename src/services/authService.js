@@ -27,4 +27,6 @@ export async function sendPasswordReset(email) {
   await fbSendPasswordResetEmail(auth, email);
 }
 
-export default { signInWithEmail, signOut, signInWithGoogle, signUpWithEmail, sendPasswordReset };
+const authService = { signInWithEmail, signOut, signInWithGoogle, signUpWithEmail, sendPasswordReset };
+
+export default authService;

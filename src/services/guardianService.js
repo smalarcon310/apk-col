@@ -52,7 +52,9 @@ export const getGuardianByUid = async (uid) => {
   }
 };
 
-export default {
+const guardianService = {
   createGuardian,
   getGuardianByUid,
 };
+
+export default guardianService;

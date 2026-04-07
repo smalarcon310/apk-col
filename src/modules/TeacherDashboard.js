@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { getAllTeachers } from '../services/teacherService';
 import { getAllSubjects } from '../services/subjectService';
-import { getAllStudents, getStudentsByCourse } from '../services/studentService';
+import { getAllStudents } from '../services/studentService';
 import { getAllCourses } from '../services/courseService';
-import AvancesForm from '../components/AvancesForm';
 import CourseCard from '../components/CourseCard';
 import TeacherProgressPanel from '../components/TeacherProgressPanel';
 
@@ -13,12 +12,10 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
   const [courses, setCourses] = useState([]);
   const [students, setStudents] = useState([]);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
-  const [selectedSubject, setSelectedSubject] = useState(null);
-  const [subjectStudents, setSubjectStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [editingSubject, setEditingSubject] = useState(null);
   const [studentSearch, setStudentSearch] = useState('');
-  const [courseFilter, setCourseFilter] = useState(null);
+  const [courseFilter] = useState(null);
 
   // load data (exposed so we can call it from event listener)
   const loadData = async () => {
@@ -67,7 +64,7 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
     if (!selectedTeacher && teachers.length === 1) {
       setSelectedTeacher(teachers[0]);
     }
-  }, [initialTeacherId, teachers, currentProfile]);
+  }, [initialTeacherId, teachers, currentProfile, selectedTeacher]);
 
   // derive assigned subjects for the selected teacher
   const assignedSubjects = (() => {
@@ -145,32 +142,6 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
 
     return list;
   })();
-
-  useEffect(() => {
-    if (!selectedSubject) {
-      setSubjectStudents([]);
-      return;
-    }
-
-    // si la materia tiene courseId, obtener estudiantes por el curso
-    const loadStudents = async () => {
-      try {
-        const subj = subjects.find((s) => s.id === selectedSubject);
-        if (subj && subj.courseId) {
-          const list = await getStudentsByCourse(subj.courseId);
-          setSubjectStudents(list || []);
-        } else {
-          // fallback: filtrar por courseId vacío
-          setSubjectStudents(students || []);
-        }
-      } catch (err) {
-        console.error(err);
-        setSubjectStudents([]);
-      }
-    };
-
-    loadStudents();
-  }, [selectedSubject, subjects, students]);
 
   return (
     <div>
