@@ -155,7 +155,7 @@ const LoginPage = ({ onLoginSuccess }) => {
     <div className="min-h-screen flex items-stretch">
       <div className="hidden lg:flex w-1/2 items-center justify-center px-10" style={{ background: 'linear-gradient(135deg,#2a8a99 0%,#1f6b7a 100%)' }}>
         <div className="text-center max-w-lg">
-          <div className="bg-white rounded-2xl inline-flex items-center justify-center p-2 shadow-2xl mb-8">
+          <div className="bg-white rounded-2xl inline-flex items-center justify-center p-6 shadow-2xl mb-8">
             <img src={getAssetPath('logo 1.png')} alt="SERMA" className="w-40 h-40 object-contain" />
           </div>
           <h1 className="text-4xl font-bold text-white mb-4">Sistema Educativo SERMA</h1>

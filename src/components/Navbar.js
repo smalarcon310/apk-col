@@ -3,7 +3,9 @@
  */
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Users, BookOpen, BookMarked, LayoutDashboard } from 'lucide-react';
+import getAssetPath from '../utils/assetPath';
 
 /**
  * Navbar - Barra de navegación superior
@@ -50,9 +52,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
         {/* Logo y Título */}
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-green-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">S</span>
-            </div>
+            <img src={getAssetPath('logo 1.png')} alt="SERMA" className="w-10 h-10 object-contain" />
             <h1 className="text-2xl font-bold text-gray-900">SERMA</h1>
             <span className="text-xs text-gray-500 ml-2">Sistema de Gestión Académica</span>
           </div>
@@ -75,9 +75,12 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
             const isActive = currentTab === tab.id;
 
             return (
-              <button
+              <motion.button
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 18 }}
                 className={`
                   flex items-center gap-2 px-6 py-3 border-b-2 font-medium text-sm
                   transition-colors
@@ -90,7 +93,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
               >
                 <IconComponent className="w-4 h-4" />
                 {tab.label}
-              </button>
+              </motion.button>
             );
           })}
         </div>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
+import { LoadingScreen } from './components/LoadingScreen';
 import { CoursesModule } from './modules/CoursesModule';
 import { SubjectsModule } from './modules/SubjectsModule';
 import RectorDashboard from './modules/RectorDashboard';
@@ -32,6 +34,7 @@ function App() {
   const [connectionError, setConnectionError] = useState(null);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleAuthSuccess = async (user, forcedRole = null, extra = {}) => {
     // Si viene un rol forzado (registro), mapearlo inmediatamente.
@@ -61,6 +64,7 @@ function App() {
   useEffect(() => {
     let unsub = () => {};
     let isMounted = true;
+    let authFallbackTimer = null;
 
     const resolveRole = async (user) => {
       if (!user) return null;
@@ -149,31 +153,74 @@ function App() {
     // Forzar cierre de sesión al iniciar para que siempre arranque en login
     const initializeAuth = async () => {
       try {
-        await authSignOut();
+        // Timeout de 5 segundos para signOut
+        await Promise.race([
+          authSignOut(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 5000))
+        ]);
       } catch (e) {
-        // ignore
+        // ignore - continuar de todas formas
+        console.debug('SignOut timeout o error (continuando):', e.message);
       }
 
       if (!isMounted) return;
 
-      unsub = onAuthStateChanged(auth, async (user) => {
-        if (!user) {
-          setCurrentProfile(null);
-          setCurrentTab(null);
-          setShowLogin(false);
-          setAuthLoading(false);
-          return;
-        }
-
-        setShowLogin(false);
-        setAuthLoading(true);
-        const profile = await resolveRole(user);
-        setCurrentProfile(profile);
-        // Navegar según rol
-        if (profile?.role === 'rector') setCurrentTab('rector');
-        else if (profile?.role === 'teacher') setCurrentTab('teacher');
-        else setCurrentTab('students');
+      authFallbackTimer = setTimeout(() => {
+        if (!isMounted || !authLoading) return;
+        console.warn('Auth timeout de seguridad alcanzado, mostrando login');
+        setCurrentProfile(null);
+        setCurrentTab(null);
         setAuthLoading(false);
+      }, 8000);
+
+      unsub = onAuthStateChanged(auth, async (user) => {
+        try {
+          if (!user) {
+            if (isMounted) {
+              setCurrentProfile(null);
+              setCurrentTab(null);
+              setShowLogin(false);
+              setAuthLoading(false);
+            }
+            if (authFallbackTimer) clearTimeout(authFallbackTimer);
+            return;
+          }
+
+          // Usar Promise.race para agregar timeout de 10 segundos
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout resolviendo rol')), 10000)
+          );
+
+          if (isMounted) {
+            setShowLogin(false);
+            setAuthLoading(true);
+          }
+
+          const profile = await Promise.race([
+            resolveRole(user),
+            timeoutPromise
+          ]);
+
+          if (isMounted) {
+            setCurrentProfile(profile);
+            // Navegar según rol
+            if (profile?.role === 'rector') setCurrentTab('rector');
+            else if (profile?.role === 'teacher') setCurrentTab('teacher');
+            else setCurrentTab('students');
+            setAuthLoading(false);
+          }
+          if (authFallbackTimer) clearTimeout(authFallbackTimer);
+        } catch (error) {
+          console.error('Error en onAuthStateChanged:', error);
+          if (isMounted) {
+            // Aunque haya error, cerrar el loading y mostrar login
+            setAuthLoading(false);
+            setCurrentProfile(null);
+            setCurrentTab(null);
+            setConnectionError('Error al cargar sesión. Por favor, inicie sesión nuevamente.');
+          }
+          if (authFallbackTimer) clearTimeout(authFallbackTimer);
+        }
       });
     };
 
@@ -194,6 +241,7 @@ function App() {
 
     return () => {
       isMounted = false;
+      if (authFallbackTimer) clearTimeout(authFallbackTimer);
       window.removeEventListener('online', () => {});
       window.removeEventListener('offline', () => {});
       try { unsub(); } catch (e) {}
@@ -201,22 +249,16 @@ function App() {
   }, []);
 
   if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin mb-4 w-8 h-8 border-4 border-blue-600 rounded-full border-t-transparent"></div>
-          <div>Cargando sesión...</div>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
   return (
-    <Routes>
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
       <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
       <Route path="/register" element={<RegisterPage onRegisterSuccess={handleAuthSuccess} />} />
       <Route path="/" element={
         currentProfile ? (
-          <div className="min-h-screen bg-gray-100">
+          <motion.div className="min-h-screen bg-gray-100" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} transition={{ duration: 0.36 }}>
             {/* Navbar */}
             <Navbar currentTab={currentTab} onTabChange={setCurrentTab} currentProfile={currentProfile} onProfileChange={setCurrentProfile} onOpenLogin={() => setShowLogin(true)} onLogout={async () => { try { await authSignOut(); setCurrentProfile(null); setCurrentTab(null); navigate('/login', { replace: true }); } catch (e) { setCurrentProfile(null); setCurrentTab(null); navigate('/login', { replace: true }); } }} />
 
@@ -254,13 +296,14 @@ function App() {
                 </p>
               </div>
             </footer>
-          </div>
+          </motion.div>
         ) : (
           <Navigate to="/login" replace />
         )
       } />
       <Route path="*" element={<Navigate to={currentProfile ? '/' : '/login'} replace />} />
-    </Routes>
+      </Routes>
+    </AnimatePresence>
   );
 }
 

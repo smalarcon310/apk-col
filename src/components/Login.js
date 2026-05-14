@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { signInWithEmail, signInWithGoogle } from '../services/authService';
+import getAssetPath from '../utils/assetPath';
 
 const Login = ({ onClose, onLoginSuccess }) => {
   const [email, setEmail] = useState('');
@@ -38,7 +39,10 @@ const Login = ({ onClose, onLoginSuccess }) => {
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Iniciar sesión</h2>
+          <div className="flex items-center gap-3">
+            <img src={getAssetPath('logo 1.png')} alt="SERMA" className="w-10 h-10 object-contain" />
+            <h2 className="text-lg font-semibold">Iniciar sesión</h2>
+          </div>
           <button onClick={onClose} className="text-gray-600 hover:text-gray-900">Cerrar</button>
         </div>
 
@@ -66,7 +70,7 @@ const Login = ({ onClose, onLoginSuccess }) => {
         <div className="mt-4">
           <div className="text-center text-sm text-gray-500 mb-2">o</div>
           <button onClick={handleGoogle} disabled={loading} className="w-full flex items-center justify-center gap-2 px-4 py-2 border rounded bg-white">
-            <img src="/google-icon.svg" alt="Google" className="w-5 h-5" />
+            <img src={getAssetPath('google-icon.svg')} alt="Google" className="w-5 h-5" />
             <span>Entrar con Google</span>
           </button>
         </div>
