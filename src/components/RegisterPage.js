@@ -13,6 +13,7 @@ const RegisterPage = ({ onRegisterSuccess }) => {
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const navigate = useNavigate();
   const [documentId, setDocumentId] = useState('');
   const [phone, setPhone] = useState('');
@@ -47,15 +48,21 @@ const RegisterPage = ({ onRegisterSuccess }) => {
   const submit = async (e) => {
     e && e.preventDefault();
     setError(null);
+    setSuccess(null);
     if (password !== confirm) {
       setError('Las contraseñas no coinciden');
       return;
     }
     setLoading(true);
     try {
-      const user = await signUpWithEmail(email, password);
+      const user = await signUpWithEmail(email, password, {
+        firstName,
+        lastName,
+        cedula: documentId,
+        role,
+      });
       // Build extra profile data
-      const extra = { firstName, lastName, documentId, phone };
+      const extra = { firstName, lastName, documentId, phone, studentId: user.studentId || null };
 
       // Create associated academic profile depending on role
       try {
@@ -73,17 +80,10 @@ const RegisterPage = ({ onRegisterSuccess }) => {
             extra.studentId = savedStudent.id;
           }
         } else if (role === 'guardian') {
-          // link parent to student by cédula ingresada en el campo
           const child = await getStudentByDocument(documentId);
           if (child) {
             extra.studentId = child.id;
             extra.studentDocumentId = documentId;
-            try {
-              const { createGuardian } = await import('../services/guardianService');
-              await createGuardian(user.uid, child.id);
-            } catch (e) {
-              console.warn('Error creando registro de guardián:', e);
-            }
           } else {
             console.warn('No se encontró estudiante con cédula', documentId);
           }
@@ -92,12 +92,17 @@ const RegisterPage = ({ onRegisterSuccess }) => {
         console.warn('Advertencia al crear perfil:', e.message);
       }
 
-      onRegisterSuccess && onRegisterSuccess(user, role, extra);
-      navigate('/', { replace: true });
+      setSuccess(user.message || 'Cuenta creada correctamente');
+      window.setTimeout(() => {
+        onRegisterSuccess && onRegisterSuccess(user, role, extra);
+        navigate('/', { replace: true });
+      }, 1200);
     } catch (err) {
-      if (err && err.code === 'auth/email-already-in-use') {
-        setError('El correo ya está registrado. Puedes iniciar sesión o recuperar la contraseña.');
+      if (err && (err.code === 'EMAIL_ALREADY_REGISTERED' || err.code === 'auth/email-already-in-use')) {
+        setError('Correo ya registrado');
         setEmailExists(true);
+      } else if (err && err.code === 'STUDENT_ACCOUNT_ALREADY_EXISTS') {
+        setError('Este estudiante ya tiene una cuenta creada');
       } else {
         setError(err.message || 'Error creando la cuenta');
       }
@@ -135,6 +140,7 @@ const RegisterPage = ({ onRegisterSuccess }) => {
           <p className="text-center text-sm text-gray-600 mb-6">Completa los datos para registrarte</p>
 
           {error && <div className="text-sm text-red-600 mb-3 bg-red-50 p-3 rounded">{error}</div>}
+          {success && <div className="text-sm text-green-700 mb-3 bg-green-50 p-3 rounded">{success}</div>}
 
           <form onSubmit={submit}>
             <div className="grid grid-cols-2 gap-3 mb-4">

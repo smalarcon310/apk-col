@@ -37,16 +37,16 @@ export const Modal = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className={`bg-white rounded-lg shadow-xl ${sizes[size]} w-full max-h-screen overflow-y-auto`}>
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between p-6 border-b border-neutral-200">
+          <h2 className="text-lg font-semibold text-neutral-900">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-neutral-400 hover:text-neutral-600 transition-colors"
             aria-label="Cerrar"
           >
-            <X className="w-6 h-6" />
+            <X className="size-6" />
           </button>
         </div>
 
@@ -57,7 +57,7 @@ export const Modal = ({
 
         {/* Footer */}
         {footer && (
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
+          <div className="p-6 border-t border-neutral-200 bg-neutral-50">
             {footer}
           </div>
         )}

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { getLatestAdvanceForStudentSubject, createAdvance } from '../services/avanceService';
+import { getLatestAdvanceForStudentSubject, createAdvance, updateAdvance } from '../services/avanceService';
 
 const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) => {
   const [previous, setPrevious] = useState(null);
   const [value, setValue] = useState(0);
+  const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -15,14 +16,18 @@ const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) 
         if (last) {
           // prefer progress field if present, else average
           setPrevious(last.progress ?? last.average ?? 0);
+          setValue(last.progress ?? last.average ?? 0);
+          setComment(last.comments || last.comment || '');
         } else {
           setPrevious(null);
+          setValue(0);
+          setComment('');
         }
       } catch (err) {
         console.error(err);
         setPrevious(null);
+        setComment('');
       }
-      setValue(0);
       setMessage(null);
     };
     load();
@@ -32,16 +37,16 @@ const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) 
     if (!student || !subject || !teacher) return;
     setSaving(true);
       try {
-      // create a simple advance using single `progress` field
       const payload = {
         studentId: student.id,
         subjectId: subject.id,
         teacherId: teacher.id,
         progress: Number(value),
-        comments: '',
-        status: 'published',
+        comments: comment.trim(),
       };
-      await createAdvance(payload);
+      const last = await getLatestAdvanceForStudentSubject(student.id, subject.id);
+      if (last?.id) await updateAdvance(last.id, payload);
+      else await createAdvance(payload);
       setMessage('Avance guardado');
       if (onSaved) onSaved();
     } catch (err) {
@@ -85,6 +90,18 @@ const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) 
             <div className="w-full bg-gray-200 h-2 rounded mt-3">
               <div style={{ width: `${value}%` }} className="h-2 bg-green-500 rounded" />
             </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="text-xs text-gray-500">Comentario para el estudiante</div>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Escribe una recomendación o retroalimentación..."
+              className="w-full border p-2 rounded min-h-[88px]"
+              maxLength={500}
+            />
+            <div className="text-xs text-gray-400 text-right mt-1">{comment.length}/500</div>
           </div>
 
           <div className="flex gap-2 mt-4">

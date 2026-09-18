@@ -5,3 +5,4 @@
 
 export { CoursesModule } from './CoursesModule';
 export { SubjectsModule } from './SubjectsModule';
+export { default as RemoteAPIModule } from './RemoteAPIModule';

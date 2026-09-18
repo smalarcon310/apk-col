@@ -52,9 +52,8 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
         {/* Logo y Título */}
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            <img src={getAssetPath('logo 1.png')} alt="SERMA" className="w-10 h-10 object-contain" />
+            <img src={getAssetPath('logo 1.png')} alt="SERMA" className="w-14 h-14 object-contain" />
             <h1 className="text-2xl font-bold text-gray-900">SERMA</h1>
-            <span className="text-xs text-gray-500 ml-2">Sistema de Gestión Académica</span>
           </div>
 
           {/* Acciones de sesión */}

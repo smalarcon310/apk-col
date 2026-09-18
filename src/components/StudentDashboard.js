@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Award, Target, CheckCircle, TrendingUp } from 'lucide-react';
+import { LoadingScreen } from './LoadingScreen';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getAllSubjects } from '../services/subjectService';
 import {
   getAdvancesByStudentAndSubject,
 } from '../services/avanceService';
-import { getStudentById } from '../services/studentService';
-import { db, auth } from '../config/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getStudentByEmail, getStudentById } from '../services/studentService';
+import { auth } from '../services/sessionAuth';
 
 const StudentDashboard = ({ currentProfile }) => {
   const [studentData, setStudentData] = useState(null);
@@ -17,27 +18,17 @@ const StudentDashboard = ({ currentProfile }) => {
     const resolveAndLoad = async () => {
       let studentId = currentProfile?.studentId;
       if (!studentId) {
-        // try by auth UID or documentId
+        // Resolve the academic record using the logged-in user's email.
         try {
-          const students = await import('../services/studentService').then((m) => m.getAllStudents());
-          const uid = auth.currentUser?.uid;
+          const email = currentProfile?.email || auth.currentUser?.email;
           const docId = currentProfile?.documentId;
-          const found = students.find(
-            (s) => s.authUid === uid || (docId && s.documentId === docId)
-          );
+          const byEmail = email ? await getStudentByEmail(email) : null;
+          const students = byEmail ? [byEmail] : await import('../services/studentService').then((m) => m.getAllStudents());
+          const found = students.find((s) => docId && s.documentId === docId) || byEmail;
           studentId = found?.id;
           if (found && !currentProfile.studentId) {
             // update profile object locally for future use
             currentProfile.studentId = studentId;
-          }
-          // if we matched and the student record lacks authUid, persist it
-          if (found && found.id && !found.authUid && auth.currentUser?.uid) {
-            try {
-              const { updateStudent } = await import('../services/studentService');
-              await updateStudent(found.id, { authUid: auth.currentUser.uid });
-            } catch (e) {
-              console.warn('No se pudo guardar authUid en student:', e);
-            }
           }
         } catch (e) {
           console.warn('No se pudo resolver studentId automáticamente:', e);
@@ -52,16 +43,21 @@ const StudentDashboard = ({ currentProfile }) => {
       const loadData = async () => {
         try {
           const studentInfo = await getStudentById(studentId).catch(() => null);
-          const subjects = await getAllSubjects();
+          const allSubjects = await getAllSubjects();
+          const subjects = studentInfo?.courseId
+            ? allSubjects.filter((subject) => subject.courseId === studentInfo.courseId)
+            : allSubjects;
           const rows = await Promise.all(
             subjects.map(async (subj) => {
               let advances = await getAdvancesByStudentAndSubject(studentId, subj.id);
-              advances = advances.filter((a) => a.status === 'published');
+              advances = (advances || []).filter((advance) => advance.status !== 'draft');
               let current = 0;
               let previous = 0;
+              let latestComment = '';
               if (advances && advances.length > 0) {
                 const last = advances[advances.length - 1];
                 current = last.progress ?? last.average ?? 0;
+                latestComment = (last.comments || last.comment || '').toString().trim();
                 if (advances.length > 1) {
                   const prev = advances[advances.length - 2];
                   previous = prev.progress ?? prev.average ?? 0;
@@ -79,6 +75,7 @@ const StudentDashboard = ({ currentProfile }) => {
                 current,
                 previous,
                 change: changeStr,
+                latestComment,
               };
             })
           );
@@ -108,7 +105,9 @@ const StudentDashboard = ({ currentProfile }) => {
             motivationMessage:
               avgProgress > 0
                 ? `Tu avance promedio actual es ${avgProgress}%. Sigue esforzándote para mejorar.`
-                : 'Aún no hay avances publicados por tu docente.',
+                : subjects.length > 0
+                ? 'Tienes materias registradas. Aún no hay avances publicados por tu docente.'
+                : 'Aún no tienes materias registradas en tu curso.',
           });
         } catch (err) {
           console.error('Error cargando datos del estudiante:', err);
@@ -117,13 +116,7 @@ const StudentDashboard = ({ currentProfile }) => {
 
       loadData();
 
-      const q = query(
-        collection(db, 'avances'),
-        where('studentId', '==', studentId),
-        where('status', '==', 'published')
-      );
-      const unsubscribe = onSnapshot(q, loadData);
-      return unsubscribe;
+      return undefined;
     };
 
     const unsubscribePromise = resolveAndLoad();
@@ -135,7 +128,7 @@ const StudentDashboard = ({ currentProfile }) => {
     };
   }, [currentProfile]);
 
-  if (!studentData) return <div className="p-6">Cargando...</div>;
+  if (!studentData) return <LoadingScreen size="compact" />;
 
   if (studentData.error) {
     return <div className="p-6 text-red-600">{studentData.error}</div>;
@@ -148,7 +141,7 @@ const StudentDashboard = ({ currentProfile }) => {
   }));
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <motion.div className="min-h-screen bg-gray-50 p-6" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.36 }}>
       {/* Encabezado del estudiante */}
       <div
         className="rounded-lg text-white p-6 mb-6 flex items-center justify-between"
@@ -218,7 +211,7 @@ const StudentDashboard = ({ currentProfile }) => {
           📚 Rendimiento por Materia
         </h3>
         <div className="space-y-4">
-          {studentData.subjects.map((subject, idx) => (
+          {studentData.subjects.length > 0 ? studentData.subjects.map((subject, idx) => (
             <div key={idx}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -254,6 +247,12 @@ const StudentDashboard = ({ currentProfile }) => {
                 <span className="text-gray-500">Avance actual: {subject.current}%</span>
                 <span className="text-gray-400">Anterior: {subject.previous}%</span>
               </div>
+              {subject.latestComment && (
+                <div className="mt-2 text-sm rounded bg-blue-50 text-blue-900 border border-blue-100 p-2">
+                  <span className="font-semibold">Comentario del docente: </span>
+                  {subject.latestComment}
+                </div>
+              )}
               <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                 <div
                   className="bg-black h-2 rounded-full"
@@ -261,7 +260,9 @@ const StudentDashboard = ({ currentProfile }) => {
                 ></div>
               </div>
             </div>
-          ))}
+          )) : (
+            <p className="text-gray-500">No hay materias registradas para tu curso.</p>
+          )}
         </div>
       </div>
 
@@ -296,7 +297,7 @@ const StudentDashboard = ({ currentProfile }) => {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 

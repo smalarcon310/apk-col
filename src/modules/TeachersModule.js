@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import Alert from '../components/Alert';
 import { createTeacher, getAllTeachers, deleteTeacher } from '../services/teacherService';
 import { getAllSubjects } from '../services/subjectService';
@@ -53,21 +54,8 @@ export const TeachersModule = ({ currentProfile }) => {
       return;
     }
     try {
-      // Crear cuenta en Firebase Auth usando el endpoint REST para evitar
-    // que la sesión actual (rector) sea reemplazada por el nuevo usuario.
-    try {
-      const { createUserByEmail } = await import('../services/authAdminService');
-      await createUserByEmail(form.email, form.password);
-    } catch (e) {
-      if (e && e.code === 'EMAIL_EXISTS') {
-        throw new Error('El correo ya está registrado en el sistema.');
-      }
-      throw e;
-    }
-      // marque al profesor como creado por el rector (solo el rector puede usar este módulo)
       const teacher = await createTeacher({
         ...form,
-        // remove password fields before saving (service will strip them)
         subjects: form.subjects ? form.subjects.split(',').map((s) => s.trim()) : [],
         createdBy: currentProfile && currentProfile.role === 'rector' ? 'rector' : null,
       });
@@ -81,29 +69,37 @@ export const TeachersModule = ({ currentProfile }) => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('¿Eliminar este profesor? Esta acción no se puede deshacer.')) return;
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await deleteTeacher(id);
-      setTeachers((t) => t.filter((x) => x.id !== id));
-      setMessage('Profesor eliminado correctamente');
-    } catch (err) {
-      console.error(err);
-      setError(err.message || 'Error eliminando profesor');
-    } finally {
-      setLoading(false);
-    }
+  const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
+
+  const handleDelete = (id) => {
+    setConfirm({
+      open: true,
+      title: 'Confirmar eliminación',
+      message: '¿Eliminar este profesor? Esta acción no se puede deshacer.',
+      onConfirm: async () => {
+        setLoading(true);
+        setError(null);
+        setMessage(null);
+        try {
+          await deleteTeacher(id);
+          setTeachers((t) => t.filter((x) => x.id !== id));
+          setMessage('Profesor eliminado correctamente');
+        } catch (err) {
+          console.error(err);
+          setError(err.message || 'Error eliminando profesor');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   };
 
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Gestión de Profesores</h2>
 
-      {message && <Alert type="success" message={message} />}
-      {error && <Alert type="error" message={error} />}
+      {message && <Alert type="success" message={message} onClose={() => setMessage(null)} />}
+      {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Mostrar formulario de creación SOLO para el Rector */}
@@ -162,6 +158,13 @@ export const TeachersModule = ({ currentProfile }) => {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        onConfirm={async () => { if (confirm.onConfirm) await confirm.onConfirm(); setConfirm({ open: false }); }}
+        onCancel={() => setConfirm({ open: false })}
+      />
     </div>
   );
 };

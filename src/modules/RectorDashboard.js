@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { LoadingScreen } from '../components/LoadingScreen';
 import { getAllStudents } from '../services/studentService';
 import { getAllCourses } from '../services/courseService';
 import { getAllSubjects } from '../services/subjectService';
@@ -111,7 +112,7 @@ export const RectorDashboard = ({ currentProfile }) => {
   }, []);
 
   if (loading) {
-    return <div className="text-center py-10">Cargando panel del Rector...</div>;
+    return <LoadingScreen size="compact" />;
   }
 
   return (
@@ -120,8 +121,7 @@ export const RectorDashboard = ({ currentProfile }) => {
       {currentProfile && currentProfile.role !== 'rector' && (
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded">
           ⚠️ Tu cuenta no tiene rol de rector (se detectó “{currentProfile.role}”).
-          Si realmente eres rector añade tu correo en la colección <code>rectors</code> o
-          configura <code>REACT_APP_RECTOR_EMAIL</code> para evitar esta advertencia.
+          Para habilitar este panel asigna el rol <code>rector</code> al usuario desde MySQL.
         </div>
       )}
 

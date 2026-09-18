@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { createAdvance } from '../services/avanceService';
 import Alert from './Alert';
+import ConfirmDialog from './ConfirmDialog';
+import { AnimatePresence } from 'framer-motion';
 
 const emptyStudentRow = (student) => ({
   studentId: student.id,
@@ -15,6 +17,7 @@ export const AvancesForm = ({ subject, teacher, students = [], onSaved, hideTitl
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   const handleChange = (index, field, value) => {
     setRows((r) => {
@@ -85,8 +88,14 @@ export const AvancesForm = ({ subject, teacher, students = [], onSaved, hideTitl
         <h3 className="font-semibold mb-3">Registro de Avances - {subject.name}</h3>
       )}
 
-      {message && <Alert type="success" message={message} />}
-      {error && <Alert type="error" message={error} />}
+      <AnimatePresence>
+        {message && (
+          <Alert key="msg" type="success" message={message} onClose={() => setMessage(null)} />
+        )}
+        {error && (
+          <Alert key="err" type="error" message={error} onClose={() => setError(null)} />
+        )}
+      </AnimatePresence>
 
       <div className="overflow-auto">
         <table className="w-full text-sm">
@@ -114,9 +123,18 @@ export const AvancesForm = ({ subject, teacher, students = [], onSaved, hideTitl
       {!hideActions && (
         <div className="mt-4 flex gap-2">
           <button onClick={() => handleSave(false)} disabled={saving} className="px-4 py-2 border rounded">Guardar borrador</button>
-          <button onClick={() => { if (!window.confirm('Confirma publicar los avances seleccionados?')) return; handleSave(true); }} disabled={saving} className="px-4 py-2 bg-green-600 text-white rounded">Publicar avances</button>
+          <button onClick={() => setConfirmPublish(true)} disabled={saving} className="px-4 py-2 bg-green-600 text-white rounded">Publicar avances</button>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmPublish}
+        title="Publicar avances"
+        message="Confirma publicar los avances seleccionados?"
+        onConfirm={async () => { setConfirmPublish(false); await handleSave(true); }}
+        onCancel={() => setConfirmPublish(false)}
+        confirmLabel="Publicar"
+      />
     </div>
   );
 };

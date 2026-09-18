@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { signInWithEmail, signInWithGoogle, signUpWithEmail, sendPasswordReset } from '../services/authService';
 import { createStudent, getStudentByDocument } from '../services/studentService';
 import getAssetPath from '../utils/assetPath';
 
 const LoginPage = ({ onLoginSuccess }) => {
+  const navigate = useNavigate();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -82,7 +84,12 @@ const LoginPage = ({ onLoginSuccess }) => {
     }
     setLoading(true);
     try {
-      const user = await signUpWithEmail(email, password);
+      const user = await signUpWithEmail(email, password, {
+        firstName,
+        lastName,
+        cedula: documentId,
+        role,
+      });
       const extra = { firstName, lastName, documentId, phone };
 
       try {
@@ -96,7 +103,7 @@ const LoginPage = ({ onLoginSuccess }) => {
           } else {
             const courseId = 'default';
             const grade = '6';
-            const savedStudent = await createStudent({ firstName, lastName, documentId, phone, courseId, grade, authUid: user.uid });
+            const savedStudent = await createStudent({ firstName, lastName, email, documentId, phone, courseId, grade, authUid: user.uid });
             extra.studentId = savedStudent.id;
           }
         } else if (role === 'guardian') {
@@ -140,7 +147,8 @@ const LoginPage = ({ onLoginSuccess }) => {
   };
 
   const toggleForm = () => {
-    setIsRegister(!isRegister);
+    if (isRegister) navigate('/login');
+    else navigate('/register');
     setError(null);
     setResetSent(false);
   };

@@ -41,83 +41,64 @@ export const DataTable = ({
     setCurrentPage(Math.min(totalPages - 1, currentPage + 1));
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Cargando...</div>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">No hay datos disponibles</div>
-      </div>
-    );
-  }
-
   return (
     <div>
-      {/* Tabla */}
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  className="px-6 py-3 text-left text-sm font-semibold text-gray-700"
-                >
-                  {column.label}
-                </th>
-              ))}
-              {(onEdit || onDelete) && (
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                  Acciones
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedData.map((row, idx) => (
-              <tr key={`${row.id}_${idx}`} className="border-b border-gray-200 hover:bg-gray-50">
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Cargando...</div>
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">No hay datos disponibles</div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
                 {columns.map((column) => (
-                  <td key={`${row.id}_${column.key}`} className="px-6 py-4 text-sm text-gray-900">
-                    {column.render
-                      ? column.render(row[column.key], row)
-                      : row[column.key]}
-                  </td>
+                  <th key={column.key} className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
+                    {column.label}
+                  </th>
                 ))}
                 {(onEdit || onDelete) && (
-                  <td className="px-6 py-4 text-sm">
-                    <div className="flex gap-2">
-                      {onEdit && (
-                        <button
-                          onClick={() => onEdit(row)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button
-                          onClick={() => onDelete(row)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Acciones</th>
                 )}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {paginatedData.map((row, index) => {
+                const rowKey = row.id || row.documentId || `row-${startIdx + index}`;
+                return (
+                  <tr key={rowKey} className="border-b border-gray-200 hover:bg-gray-50">
+                    {columns.map((column) => (
+                      <td key={`${rowKey}-${column.key}`} className="px-6 py-4 text-sm text-gray-900">
+                        {column.render ? column.render(row[column.key], row) : row[column.key]}
+                      </td>
+                    ))}
+                    {(onEdit || onDelete) && (
+                      <td className="px-6 py-4 text-sm">
+                        <div className="flex gap-2">
+                          {onEdit && (
+                            <button onClick={() => onEdit(row)} className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button onClick={() => onDelete(row)} className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors" title="Eliminar">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Paginación */}
       {pagination && totalPages > 1 && (

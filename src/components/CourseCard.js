@@ -1,13 +1,9 @@
 import React from 'react';
-
 const CourseCard = ({ id, name, code, teacherName, onSelect, showActions = false }) => {
   return (
     <div
-      role="button"
-      tabIndex={0}
       onClick={() => onSelect && onSelect(id)}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect && onSelect(id)}
-      className="bg-white p-3 rounded shadow mb-3 cursor-pointer hover:shadow-md"
+      className="bg-white p-3 rounded shadow mb-3 cursor-pointer"
     >
       <div className="flex justify-between items-center">
         <div>

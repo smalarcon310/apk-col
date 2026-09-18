@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Plus } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
@@ -145,6 +146,8 @@ export const CoursesModule = () => {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [alert, setAlert] = useState(null);
 
+  const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
+
   // Cargar cursos
   useEffect(() => {
     loadCourses();
@@ -191,27 +194,24 @@ export const CoursesModule = () => {
     setShowModal(true);
   };
 
-  const handleDelete = async (course) => {
-    if (window.confirm(`¿Eliminar el curso ${course.name}?`)) {
-      try {
-        setLoading(true);
-        await deleteCourse(course.id);
-        setAlert({
-          type: 'success',
-          title: 'Éxito',
-          message: 'Curso eliminado correctamente',
-        });
-        await loadCourses();
-      } catch (error) {
-        setAlert({
-          type: 'error',
-          title: 'Error',
-          message: error.message || 'Error al eliminar',
-        });
-      } finally {
-        setLoading(false);
+  const handleDelete = (course) => {
+    setConfirm({
+      open: true,
+      title: 'Confirmar eliminación',
+      message: `¿Eliminar el curso ${course.name}?`,
+      onConfirm: async () => {
+        try {
+          setLoading(true);
+          await deleteCourse(course.id);
+          setAlert({ type: 'success', title: 'Éxito', message: 'Curso eliminado correctamente' });
+          await loadCourses();
+        } catch (error) {
+          setAlert({ type: 'error', title: 'Error', message: error.message || 'Error al eliminar' });
+        } finally {
+          setLoading(false);
+        }
       }
-    }
+    });
   };
 
   const handleSubmit = async (formData) => {
@@ -300,6 +300,14 @@ export const CoursesModule = () => {
           Nuevo Curso
         </Button>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        onConfirm={async () => { if (confirm.onConfirm) await confirm.onConfirm(); setConfirm({ open: false }); }}
+        onCancel={() => setConfirm({ open: false })}
+      />
 
       {/* Búsqueda y Filtros */}
       <div className="flex gap-4">

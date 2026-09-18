@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -12,13 +11,12 @@ import { StudentsModule } from './modules/StudentsModule';
 import StudentDashboard from './components/StudentDashboard';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
+import RemoteAPIModule from './modules/RemoteAPIModule';
 import { signOut as authSignOut } from './services/authService';
-import { auth } from './config/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { auth, onAuthStateChanged } from './services/sessionAuth';
+import { mysqlRequest } from './services/mysqlApi';
 import { getAllTeachers } from './services/teacherService';
-import { getAllStudents } from './services/studentService';
-import { db } from './config/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { getAllStudents, getStudentByDocument, getStudentByEmail } from './services/studentService';
 import './App.css';
 
 /**
@@ -52,15 +50,23 @@ function App() {
       else if (profile?.role === 'teacher') setCurrentTab('teacher');
       else setCurrentTab('students');
     } else {
-      // No asumir rol aquí: dejar que el listener `onAuthStateChanged` resuelva el rol
-      // simplemente cerrar el modal y navegar; el listener actualizará `currentProfile`.
+      // El login MySQL ya devuelve el rol actualizado del usuario.
+      const profile = {
+        role: user.role || 'student',
+        name: user.name || user.email,
+        email: user.email,
+        studentId: user.studentId || null,
+        documentId: user.documentId || null,
+      };
+      setCurrentProfile(profile);
+      setCurrentTab(profile.role === 'rector' ? 'rector' : profile.role === 'teacher' ? 'teacher' : 'students');
       setShowLogin(false);
     }
 
     try { navigate('/', { replace: true }); } catch (e) {}
   };
 
-  // Verificar conexión a Firebase
+  // Restaurar la sesión local guardada por la API MySQL.
   useEffect(() => {
     let unsub = () => {};
     let isMounted = true;
@@ -68,19 +74,27 @@ function App() {
 
     const resolveRole = async (user) => {
       if (!user) return null;
-      const email = user.email || '';
-
-      // Comprobar colección 'rectors' en Firestore primero
-      try {
-        const rectorsCol = collection(db, 'rectors');
-        const q = query(rectorsCol, where('email', '==', email));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const r = snap.docs[0].data();
-          return { role: 'rector', name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || email };
+      let resolvedUser = user;
+      if (user.id && !user.studentId) {
+        try {
+          const refreshedUser = await mysqlRequest(`/api/auth/session/${encodeURIComponent(user.id)}`);
+          resolvedUser = { ...user, ...refreshedUser };
+          localStorage.setItem('sessionUser', JSON.stringify(resolvedUser));
+        } catch (e) {
+          // Continuar con la sesión local si la API no está disponible.
         }
-      } catch (e) {
-        // ignore
+      }
+      const email = resolvedUser.email || '';
+
+      // El login MySQL ya resuelve la relación por cédula.
+      if (resolvedUser.studentId) {
+        return {
+          role: resolvedUser.role || 'student',
+          studentId: resolvedUser.studentId,
+          documentId: resolvedUser.documentId || null,
+          name: resolvedUser.name || email,
+          email,
+        };
       }
 
       // Buscar profesor por email (solo si fue creado por el rector)
@@ -101,7 +115,9 @@ function App() {
       // no se almacena en el perfil.
       try {
         const students = await getAllStudents();
-        const s = students.find((x) => x.authUid === user.uid);
+        const byEmail = email ? await getStudentByEmail(email) : null;
+        const byDocument = resolvedUser.documentId ? await getStudentByDocument(resolvedUser.documentId) : null;
+        const s = students.find((x) => x.authUid === resolvedUser.uid) || byEmail || byDocument;
         if (s) {
           return {
             role: 'student',
@@ -134,35 +150,11 @@ function App() {
         // ignore
       }
 
-      // Si no se encuentra por ninguno de los métodos previos, 
-      // comprobar variable de entorno para Rector
-      const rectorEmail = process.env.REACT_APP_RECTOR_EMAIL;
-      if (rectorEmail && email.toLowerCase() === rectorEmail.toLowerCase()) {
-        return { role: 'rector', name: email };
-      }
-
-      // Fallback: si el dominio o correo sugiere rector, marcar como rector
-      if (email.toLowerCase().includes('rector') || email.toLowerCase().includes('admin')) {
-        return { role: 'rector', name: email };
-      }
-
-      // Si no coincide con ninguna, tratar como estudiante por defecto
-      return { role: 'student', name: email };
+      // El rol se obtiene de users.role en MySQL; no se infiere desde el correo.
+      return { role: user.role || 'student', name: user.name || email, email };
     };
 
-    // Forzar cierre de sesión al iniciar para que siempre arranque en login
     const initializeAuth = async () => {
-      try {
-        // Timeout de 5 segundos para signOut
-        await Promise.race([
-          authSignOut(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 5000))
-        ]);
-      } catch (e) {
-        // ignore - continuar de todas formas
-        console.debug('SignOut timeout o error (continuando):', e.message);
-      }
-
       if (!isMounted) return;
 
       authFallbackTimer = setTimeout(() => {
@@ -252,13 +244,14 @@ function App() {
     return <LoadingScreen />;
   }
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <Routes location={location} key={location.pathname}>
+    <>
+      <Routes location={location}>
       <Route path="/login" element={<LoginPage onLoginSuccess={handleAuthSuccess} />} />
       <Route path="/register" element={<RegisterPage onRegisterSuccess={handleAuthSuccess} />} />
+      <Route path="/api-remote" element={<RemoteAPIModule />} />
       <Route path="/" element={
         currentProfile ? (
-          <motion.div className="min-h-screen bg-gray-100" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} transition={{ duration: 0.36 }}>
+          <div className="min-h-screen bg-gray-100">
             {/* Navbar */}
             <Navbar currentTab={currentTab} onTabChange={setCurrentTab} currentProfile={currentProfile} onProfileChange={setCurrentProfile} onOpenLogin={() => setShowLogin(true)} onLogout={async () => { try { await authSignOut(); setCurrentProfile(null); setCurrentTab(null); navigate('/login', { replace: true }); } catch (e) { setCurrentProfile(null); setCurrentTab(null); navigate('/login', { replace: true }); } }} />
 
@@ -296,14 +289,14 @@ function App() {
                 </p>
               </div>
             </footer>
-          </motion.div>
+          </div>
         ) : (
           <Navigate to="/login" replace />
         )
       } />
       <Route path="*" element={<Navigate to={currentProfile ? '/' : '/login'} replace />} />
       </Routes>
-    </AnimatePresence>
+    </>
   );
 }
 

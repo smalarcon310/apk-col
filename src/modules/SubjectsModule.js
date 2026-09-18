@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import AnimatedSection from '../components/AnimatedSection';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Plus } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { DataTable } from '../components/DataTable';
@@ -33,7 +35,7 @@ const SubjectForm = ({ subject, courses, teachers = [], onSubmit, onCancel, load
 
   const [errors, setErrors] = useState({});
 
-  const handleChange = (e) => {
+  const handleFormChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
@@ -68,7 +70,7 @@ const SubjectForm = ({ subject, courses, teachers = [], onSubmit, onCancel, load
         label="Nombre de la materia"
         name="name"
         value={formData.name}
-        onChange={handleChange}
+        onChange={handleFormChange}
         error={errors.name}
         placeholder="Ej: Matemáticas"
         required
@@ -78,7 +80,7 @@ const SubjectForm = ({ subject, courses, teachers = [], onSubmit, onCancel, load
         label="Curso"
         name="courseId"
         value={formData.courseId}
-        onChange={handleChange}
+        onChange={handleFormChange}
         error={errors.courseId}
         options={courseOptions}
         required
@@ -88,7 +90,7 @@ const SubjectForm = ({ subject, courses, teachers = [], onSubmit, onCancel, load
         label="Docente asignado"
         name="teacherId"
         value={formData.teacherId}
-        onChange={handleChange}
+        onChange={handleFormChange}
         error={errors.teacher}
         options={[{ value: '', label: 'Seleccione un docente' }, ...teacherOptions]}
         required
@@ -98,7 +100,7 @@ const SubjectForm = ({ subject, courses, teachers = [], onSubmit, onCancel, load
         label="Descripción (opcional)"
         name="description"
         value={formData.description || ''}
-        onChange={handleChange}
+        onChange={handleFormChange}
         placeholder="Descripción de la materia..."
         rows="3"
       />
@@ -211,36 +213,33 @@ export const SubjectsModule = ({ currentProfile }) => {
     setShowModal(true);
   };
 
-  const handleDelete = async (subject) => {
+  const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
+
+  const handleDelete = (subject) => {
     // Solo el Rector puede eliminar materias
     if (currentProfile && currentProfile.role !== 'rector') {
       setAlert({ type: 'error', title: 'Acceso denegado', message: 'Solo el Rector puede eliminar materias.' });
       return;
     }
 
-    if (window.confirm(`¿Eliminar la materia ${subject.name}?`)) {
-      try {
-        setLoading(true);
-        await deleteSubject(subject.id);
-        setAlert({
-          type: 'success',
-          title: 'Éxito',
-          message: 'Materia eliminada correctamente',
-        });
-        await loadData();
+    setConfirm({
+      open: true,
+      title: 'Confirmar eliminación',
+      message: `¿Eliminar la materia ${subject.name}?`,
+      onConfirm: async () => {
         try {
-          window.dispatchEvent(new Event('serma:data-changed'));
-        } catch (e) {}
-      } catch (error) {
-        setAlert({
-          type: 'error',
-          title: 'Error',
-          message: error.message || 'Error al eliminar',
-        });
-      } finally {
-        setLoading(false);
+          setLoading(true);
+          await deleteSubject(subject.id);
+          setAlert({ type: 'success', title: 'Éxito', message: 'Materia eliminada correctamente' });
+          await loadData();
+          try { window.dispatchEvent(new Event('serma:data-changed')); } catch (e) {}
+        } catch (error) {
+          setAlert({ type: 'error', title: 'Error', message: error.message || 'Error al eliminar' });
+        } finally {
+          setLoading(false);
+        }
       }
-    }
+    });
   };
 
   const handleSubmit = async (formData) => {
@@ -366,7 +365,7 @@ export const SubjectsModule = ({ currentProfile }) => {
   ];
 
   return (
-    <div className="space-y-6">
+    <AnimatedSection className="space-y-6">
       {/* Alert */}
       {alert && (
         <Alert
@@ -450,7 +449,14 @@ export const SubjectsModule = ({ currentProfile }) => {
           loading={loading}
         />
       </Modal>
-    </div>
+      <ConfirmDialog
+        isOpen={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        onConfirm={async () => { if (confirm.onConfirm) await confirm.onConfirm(); setConfirm({ open: false }); }}
+        onCancel={() => setConfirm({ open: false })}
+      />
+    </AnimatedSection>
   );
 };
 
