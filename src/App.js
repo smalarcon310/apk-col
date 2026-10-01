@@ -9,12 +9,14 @@ import TeachersModule from './modules/TeachersModule';
 import TeacherDashboard from './modules/TeacherDashboard';
 import { StudentsModule } from './modules/StudentsModule';
 import StudentDashboard from './components/StudentDashboard';
+import AnalysisModule from './modules/AnalysisModule';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import RemoteAPIModule from './modules/RemoteAPIModule';
 import { signOut as authSignOut } from './services/authService';
 import { auth, onAuthStateChanged } from './services/sessionAuth';
 import { mysqlRequest } from './services/mysqlApi';
+import Chatbot from './components/Chatbot';
 import { getAllTeachers } from './services/teacherService';
 import { getAllStudents, getStudentByDocument, getStudentByEmail } from './services/studentService';
 import './App.css';
@@ -55,6 +57,7 @@ function App() {
         role: user.role || 'student',
         name: user.name || user.email,
         email: user.email,
+        teacherId: user.teacherId || null,
         studentId: user.studentId || null,
         documentId: user.documentId || null,
       };
@@ -87,6 +90,15 @@ function App() {
       const email = resolvedUser.email || '';
 
       // El login MySQL ya resuelve la relación por cédula.
+      if (resolvedUser.role === 'teacher') {
+        return {
+          role: 'teacher',
+          teacherId: resolvedUser.teacherId || null,
+          name: resolvedUser.name || email,
+          email,
+        };
+      }
+
       if (resolvedUser.studentId) {
         return {
           role: resolvedUser.role || 'student',
@@ -269,6 +281,7 @@ function App() {
               ) : (
                 <>
                   {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
+                  {currentTab === 'analysis' && currentProfile?.role === 'rector' && <AnalysisModule />}
                   {currentTab === 'students' && <StudentsModule currentProfile={currentProfile} />}
                   {currentTab === 'teacher' && currentProfile?.role === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.teacherId} currentProfile={currentProfile} />}
                   {currentTab === 'teachers' && <TeachersModule currentProfile={currentProfile} />}
@@ -277,6 +290,8 @@ function App() {
                 </>
               )}
             </main>
+
+            <Chatbot />
 
             {/* Footer */}
             <footer className="bg-white border-t border-gray-200 mt-12">

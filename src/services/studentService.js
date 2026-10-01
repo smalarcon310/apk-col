@@ -4,7 +4,7 @@ export const createStudent = (data) => mysqlRequest('/api/estudiantes', { method
 export const getAllStudents = () => mysqlRequest('/api/estudiantes').then((r) => r.map(normalize));
 export const getStudentById = (id) => mysqlRequest(`/api/estudiantes/${id}`).then(normalize);
 export const getStudentByEmail = (email) => mysqlRequest(`/api/estudiantes/email/${encodeURIComponent(email)}`).then((r) => r ? normalize(r) : null);
-export const getStudentByDocument = (id) => mysqlRequest(`/api/estudiantes/document/${id}`).then((r) => r ? normalize(r) : null);
+export const getStudentByDocument = (id) => mysqlRequest(`/api/auth/student-by-document/${encodeURIComponent(id)}`).then((r) => r ? normalize(r) : null);
 export const getStudentsByCourse = (id) => mysqlRequest(`/api/estudiantes?courseId=${id}`).then((r) => r.map(normalize));
 export const updateStudent = (id, data) => mysqlRequest(`/api/estudiantes/${id}`, { method: 'PUT', body: data }).then(normalize);
 export const deleteStudent = (id) => mysqlRequest(`/api/estudiantes/${id}`, { method: 'DELETE' });

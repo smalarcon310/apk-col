@@ -50,7 +50,7 @@
 .form-section button {
   grid-column: 1 / -1;
   padding: 12px;
-  background: #667eea;
+  background: #2563eb;
   color: white;
   border: none;
   border-radius: 5px;
@@ -60,7 +60,7 @@
 }
 
 .form-section button:hover:not(:disabled) {
-  background: #5568d3;
+  background: #1d4ed8;
 }
 
 .form-section button:disabled {
@@ -75,7 +75,7 @@
 }
 
 .table th {
-  background: #667eea;
+  background: #2563eb;
   color: white;
   padding: 12px;
   text-align: left;

@@ -3,8 +3,8 @@
  */
 
 /**
- * Formatear timestamp de Firestore a fecha legible
- * @param {Object} timestamp - Timestamp de Firestore
+ * Formatear una fecha a un formato legible
+ * @param {Object|string|number} timestamp - Fecha o valor con método toDate
  * @returns {string} Fecha formateada
  */
 export const formatDate = (timestamp) => {
@@ -23,8 +23,8 @@ export const formatDate = (timestamp) => {
 };
 
 /**
- * Formatear timestamp con hora
- * @param {Object} timestamp - Timestamp de Firestore
+ * Formatear una fecha con hora
+ * @param {Object|string|number} timestamp - Fecha o valor con método toDate
  * @returns {string} Fecha y hora formateadas
  */
 export const formatDateTime = (timestamp) => {

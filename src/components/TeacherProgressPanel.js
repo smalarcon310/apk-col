@@ -34,13 +34,13 @@ const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) 
   }, [student, subject]);
 
   const handleSave = async () => {
-    if (!student || !subject || !teacher) return;
+    if (!student || !subject) return;
     setSaving(true);
       try {
       const payload = {
         studentId: student.id,
         subjectId: subject.id,
-        teacherId: teacher.id,
+        teacherId: teacher?.id || null,
         progress: Number(value),
         comments: comment.trim(),
       };
@@ -51,7 +51,7 @@ const TeacherProgressPanel = ({ student, subject, teacher, onSaved, onCancel }) 
       if (onSaved) onSaved();
     } catch (err) {
       console.error(err);
-      setMessage('Error guardando avance');
+      setMessage(err.message || 'Error guardando avance');
     } finally {
       setSaving(false);
     }

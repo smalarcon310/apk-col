@@ -1,6 +1,6 @@
 /**
  * Componente para listar estudiantes desde la API REST remota
- * Integra autenticación de Firebase con la API remota
+ * Integra autenticación de sesión con la API remota
  */
 
 import React, { useState, useEffect } from 'react';
@@ -89,7 +89,7 @@ const StudentsListRemote = ({ onSelectStudent, showAdvances = false }) => {
         <div className="flex items-center gap-2">
           <AlertCircle className="w-5 h-5 text-yellow-600" />
           <p className="text-yellow-700">
-            Debes iniciar sesión en Firebase para ver los estudiantes.
+            Debes iniciar sesión para ver los estudiantes.
           </p>
         </div>
       </div>

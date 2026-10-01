@@ -1,10 +1,10 @@
 /**
  * API Client - Integración con API REST remota
- * Maneja todas las peticiones HTTP con autenticación de Firebase
+ * Maneja todas las peticiones HTTP con autenticación de sesión
  * 
  * Características:
- * - Obtiene el token de Firebase del usuario autenticado
- * - Agrega el token en cada request (Authorization: Bearer {token})
+ * - Obtiene el identificador del usuario autenticado
+ * - Agrega el identificador en cada request (Authorization: Bearer {token})
  * - Maneja errores de autenticación y conexión
  * - Solo permite requests si el usuario está autenticado
  */
@@ -15,11 +15,11 @@ import { auth } from './sessionAuth';
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3002';
 
 /**
- * Obtiene el token de Firebase del usuario autenticado
- * @returns {Promise<string>} Token de Firebase
+ * Obtiene el identificador del usuario autenticado
+ * @returns {Promise<string>} Identificador de sesión
  * @throws {Error} Si el usuario no está autenticado
  */
-export async function getAuthToken() {
+export async function getSessionToken() {
   const currentUser = auth.currentUser;
   
   if (!currentUser) {
@@ -29,7 +29,7 @@ export async function getAuthToken() {
   try {
     return currentUser.uid;
   } catch (error) {
-    console.error('Error al obtener el token de Firebase:', error);
+    console.error('Error al obtener el identificador de sesión:', error);
     throw new Error('No se pudo obtener el token de autenticación');
   }
 }
@@ -57,10 +57,10 @@ export async function apiRequest(endpoint, options = {}) {
       throw new Error('Usuario no autenticado. Por favor inicia sesión.');
     }
 
-    // Obtener el token de Firebase
+    // Obtener el identificador de sesión
     let token = null;
     if (requireAuth) {
-      token = await getAuthToken();
+      token = await getSessionToken();
     }
 
     // Configurar headers
@@ -223,7 +223,7 @@ export async function createResource(endpoint, data) {
 }
 
 export default {
-  getAuthToken,
+  getSessionToken,
   apiRequest,
   getStudents,
   getStudent,

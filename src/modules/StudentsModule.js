@@ -48,10 +48,14 @@ export const StudentsModule = ({ currentProfile = null }) => {
 		loadData();
 	}, []);
 
-	const courseOptions = courses.map((course) => ({
+	const allCourseOptions = courses.map((course) => ({
 		value: course.id,
 		label: `${course.name} - Grado ${course.grade}`,
 	}));
+	const courseOptions = allCourseOptions.filter((course) => {
+		const selectedCourse = courses.find((item) => item.id === course.value);
+		return selectedCourse && String(selectedCourse.grade) === String(formData.grade);
+	});
 
 	const filteredStudents = useMemo(() => {
 		const term = searchTerm.trim().toLowerCase();
@@ -84,7 +88,15 @@ export const StudentsModule = ({ currentProfile = null }) => {
 
 	const handleChange = (e) => {
 		const { name, value } = e.target;
-		setFormData((prev) => ({ ...prev, [name]: value }));
+		setFormData((prev) => {
+			if (name !== 'grade') return { ...prev, [name]: value };
+			const selectedCourse = courses.find((course) => course.id === prev.courseId);
+			return {
+				...prev,
+				grade: value,
+				courseId: selectedCourse && String(selectedCourse.grade) === String(value) ? prev.courseId : '',
+			};
+		});
 	};
 
 	const handleSubmit = async (e) => {
@@ -268,7 +280,7 @@ export const StudentsModule = ({ currentProfile = null }) => {
 								name="courseId"
 								value={editFormData.courseId}
 								onChange={handleEditChange}
-								options={courseOptions.filter((course) => {
+								options={allCourseOptions.filter((course) => {
 									const selectedCourse = courses.find((item) => item.id === course.value);
 									return selectedCourse && String(selectedCourse.grade) === String(editFormData.grade);
 								})}

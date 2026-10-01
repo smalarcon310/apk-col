@@ -50,7 +50,7 @@
 }
 
 .table th {
-  background: #667eea;
+  background: #2563eb;
   color: white;
   padding: 15px;
   text-align: left;
@@ -81,7 +81,7 @@
 .table td.calificacion {
   font-size: 18px;
   text-align: center;
-  color: #667eea;
+  color: #2563eb;
 }
 
 .loading {

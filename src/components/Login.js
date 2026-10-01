@@ -19,7 +19,7 @@ const Login = ({ onClose, onLoginSuccess }) => {
       setError(err.message || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
-    }
+    }t
   };
 
   const handleGoogle = async () => {

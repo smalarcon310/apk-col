@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Users, BookOpen, BookMarked, LayoutDashboard } from 'lucide-react';
+import { Users, BookOpen, BookMarked, LayoutDashboard, BarChart3 } from 'lucide-react';
 import getAssetPath from '../utils/assetPath';
 
 /**
@@ -14,6 +14,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
 
   const allTabs = [
     { id: 'rector', label: 'Rector', icon: LayoutDashboard },
+    { id: 'analysis', label: 'Análisis', icon: BarChart3 },
     { id: 'students', label: 'Estudiante', icon: Users },
     { id: 'teacher', label: 'Docente', icon: Users },
     { id: 'teachers', label: 'Profesores', icon: Users },

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { signUpWithEmail, sendPasswordReset } from '../services/authService';
-import { createStudent, getStudentByDocument } from '../services/studentService';
+import { getStudentByDocument } from '../services/studentService';
 import { Link, useNavigate } from 'react-router-dom';
 import getAssetPath from '../utils/assetPath';
 
@@ -35,8 +35,7 @@ const RegisterPage = ({ onRegisterSuccess }) => {
         const s = await getStudentByDocument(documentId);
         if (!active) return;
         setStudentMatch(s);
-        if (s) setRole('guardian');
-        else setRole('student');
+        setRole('student');
       } catch (e) {
         console.warn('Error buscando estudiante por cédula:', e);
       }
@@ -53,6 +52,10 @@ const RegisterPage = ({ onRegisterSuccess }) => {
       setError('Las contraseñas no coinciden');
       return;
     }
+    if (!studentMatch) {
+      setError('La cédula debe corresponder a un estudiante registrado para crear la cuenta');
+      return;
+    }
     setLoading(true);
     try {
       const user = await signUpWithEmail(email, password, {
@@ -67,18 +70,7 @@ const RegisterPage = ({ onRegisterSuccess }) => {
       // Create associated academic profile depending on role
       try {
         if (role === 'student') {
-          let existingStudent = null;
-          if (documentId) {
-            existingStudent = await getStudentByDocument(documentId);
-          }
-          if (existingStudent) {
-            extra.studentId = existingStudent.id;
-          } else {
-            const courseId = 'default';
-            const grade = '6';
-            const savedStudent = await createStudent({ firstName, lastName, documentId, phone, courseId, grade, authUid: user.uid });
-            extra.studentId = savedStudent.id;
-          }
+          extra.studentId = studentMatch.id;
         } else if (role === 'guardian') {
           const child = await getStudentByDocument(documentId);
           if (child) {
@@ -178,12 +170,6 @@ const RegisterPage = ({ onRegisterSuccess }) => {
               <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm">
                 <strong>Estudiante encontrado:</strong> {studentMatch.firstName} {studentMatch.lastName}
                 {studentMatch.grade ? ` - Grado ${studentMatch.grade}` : ''}
-              </div>
-            )}
-
-            {role === 'guardian' && studentMatch && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                La cédula coincide con un estudiante registrado; se creará una cuenta de acudiente vinculada a ese alumno.
               </div>
             )}
 

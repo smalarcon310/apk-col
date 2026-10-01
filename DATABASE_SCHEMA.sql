@@ -1,7 +1,7 @@
 /**
  * SERMA - Esquema de Base de Datos PostgreSQL
  * Define todas las tablas, índices y relaciones
- * Nota: La autenticación se mantiene en Firebase Auth
+ * Nota: La autenticación se gestiona mediante la API del proyecto
  */
 
 -- =====================================================
@@ -56,7 +56,6 @@ CREATE TABLE teachers (
   email VARCHAR(255) NOT NULL UNIQUE,
   phone VARCHAR(15) NOT NULL,
   specialization VARCHAR(100),
-  firebase_uid VARCHAR(255) UNIQUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -64,7 +63,6 @@ CREATE TABLE teachers (
 -- Índices para teachers
 CREATE INDEX idx_teachers_document_id ON teachers(document_id);
 CREATE INDEX idx_teachers_email ON teachers(email);
-CREATE INDEX idx_teachers_firebase_uid ON teachers(firebase_uid);
 
 -- =====================================================
 -- 4. TABLA: SUBJECTS (Materias)
@@ -319,7 +317,7 @@ INSERT INTO students (first_name, last_name, document_id, email, phone, grade, c
 -- =====================================================
 COMMENT ON TABLE courses IS 'Almacena información de los cursos/grados académicos';
 COMMENT ON TABLE students IS 'Información personal y académica de los estudiantes';
-COMMENT ON TABLE teachers IS 'Información de los docentes (vinculados con Firebase Auth)';
+COMMENT ON TABLE teachers IS 'Información de los docentes';
 COMMENT ON TABLE subjects IS 'Materias/asignaturas ofrecidas en los cursos';
 COMMENT ON TABLE avances IS 'Registros de progreso académico de estudiantes';
 COMMENT ON TABLE guardians IS 'Relaciones entre usuarios autenticados y estudiantes';

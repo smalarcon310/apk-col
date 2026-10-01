@@ -17,7 +17,6 @@ export async function signUpWithEmail(email, password, profile = {}) {
 export function signOut() {
   localStorage.removeItem('sessionUser');
   localStorage.removeItem('userData');
-  localStorage.removeItem('firebaseUID');
   return Promise.resolve();
 }
 

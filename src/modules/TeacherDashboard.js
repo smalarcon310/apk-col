@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Filter, GraduationCap, LayoutGrid, Search, Users } from 'lucide-react';
 import { getAllTeachers } from '../services/teacherService';
 import { getAllSubjects } from '../services/subjectService';
 import { getAllStudents } from '../services/studentService';
 import { getAllCourses } from '../services/courseService';
-import CourseCard from '../components/CourseCard';
+import { createAdvance, getLatestAdvanceForStudentSubject, updateAdvance } from '../services/avanceService';
 import TeacherProgressPanel from '../components/TeacherProgressPanel';
 
 const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) => {
@@ -16,6 +17,10 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
   const [editingSubject, setEditingSubject] = useState(null);
   const [studentSearch, setStudentSearch] = useState('');
   const [courseFilter, setCourseFilter] = useState('');
+  const [progressValues, setProgressValues] = useState({});
+  const [commentValues, setCommentValues] = useState({});
+  const [savingKey, setSavingKey] = useState(null);
+  const loadedProgressKey = useRef('');
 
   // load data (exposed so we can call it from event listener)
   const loadData = async () => {
@@ -66,10 +71,17 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
     }
   }, [initialTeacherId, teachers, currentProfile, selectedTeacher]);
 
+  const activeTeacher = selectedTeacher || (currentProfile?.role === 'teacher' ? {
+    id: initialTeacherId || currentProfile.teacherId,
+    firstName: currentProfile.name || '',
+    lastName: '',
+  } : null);
+
   // derive assigned subjects for the selected teacher
   const teacherSubjects = (() => {
-    if (!selectedTeacher) return [];
-    const fullName = `${selectedTeacher.firstName} ${selectedTeacher.lastName}`;
+    if (!activeTeacher) return [];
+    if (currentProfile?.role === 'teacher') return subjects;
+    const fullName = `${activeTeacher.firstName || ''} ${activeTeacher.lastName || ''}`.trim();
 
     // Prefer authoritative list stored on teacher document
     let list = [];
@@ -90,7 +102,7 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
         const fullMatches = subjects.filter(
           (s) =>
             s.name === name &&
-            (s.teacher === fullName || s.teacherId === selectedTeacher.id)
+            (s.teacher === fullName || s.teacherId === activeTeacher.id)
         );
         if (fullMatches.length > 0) {
           fullMatches.forEach((m) => found.push(m));
@@ -112,7 +124,7 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
     } else {
       // Fallback: find subjects that have the teacher name in the subject document
       list = subjects.filter(
-        (s) => s.teacher === fullName || s.teacherId === selectedTeacher.id
+        (s) => s.teacher === fullName || s.teacherId === activeTeacher.id
       );
     }
 
@@ -183,6 +195,79 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
     }
   }, [filteredStudents, selectedStudent]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadProgress = async () => {
+      if (!filteredStudents.length || !teacherSubjects.length) {
+        setProgressValues({});
+        return;
+      }
+      const progressKey = `${filteredStudents.map((student) => student.id).join(',')}|${teacherSubjects.map((subject) => subject.id).join(',')}`;
+      if (loadedProgressKey.current === progressKey) return;
+      loadedProgressKey.current = progressKey;
+      const pairs = await Promise.all(filteredStudents.flatMap((student) => teacherSubjects
+        .filter((subject) => subject.courseId === student.courseId)
+        .map(async (subject) => {
+          try {
+            const advance = await getLatestAdvanceForStudentSubject(student.id, subject.id);
+            return [`${student.id}-${subject.id}`, {
+              id: advance?.id || null,
+              progress: advance?.progress ?? advance?.average ?? null,
+              comment: advance?.comments || advance?.comment || '',
+            }];
+          } catch (error) {
+            console.warn('No se pudo cargar el avance de la planilla:', error);
+            return [`${student.id}-${subject.id}`, null];
+          }
+        })));
+      if (!cancelled) {
+        const values = Object.fromEntries(pairs);
+        setProgressValues(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value?.progress ?? null])));
+        setCommentValues((current) => Object.fromEntries(filteredStudents.map((student) => {
+          const firstSubject = teacherSubjects.find((subject) => subject.courseId === student.courseId);
+          return [student.id, current[student.id] ?? (firstSubject ? values[`${student.id}-${firstSubject.id}`]?.comment || '' : '')];
+        })));
+      }
+    };
+    loadProgress();
+    return () => { cancelled = true; };
+  }, [filteredStudents, teacherSubjects]);
+
+  const saveProgress = async (student, subject, value) => {
+    const key = `${student.id}-${subject.id}`;
+    const progress = Math.max(0, Math.min(100, Number(value)));
+    setSavingKey(key);
+    try {
+      const last = await getLatestAdvanceForStudentSubject(student.id, subject.id);
+      const payload = { studentId: student.id, subjectId: subject.id, teacherId: activeTeacher?.id || null, progress, comments: last?.comments || last?.comment || '' };
+      if (last?.id) await updateAdvance(last.id, payload);
+      else await createAdvance(payload);
+      setProgressValues((current) => ({ ...current, [key]: progress }));
+    } catch (error) {
+      console.error('No se pudo guardar el avance:', error);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const saveComment = async (student) => {
+    const subjectsForStudent = teacherSubjects.filter((subject) => subject.courseId === student.courseId);
+    const comment = commentValues[student.id] || '';
+    setSavingKey(`comment-${student.id}`);
+    try {
+      await Promise.all(subjectsForStudent.map(async (subject) => {
+        const last = await getLatestAdvanceForStudentSubject(student.id, subject.id);
+        const payload = { studentId: student.id, subjectId: subject.id, teacherId: activeTeacher?.id || null, progress: last?.progress ?? last?.average ?? 0, comments: comment.trim() };
+        if (last?.id) await updateAdvance(last.id, payload);
+        else await createAdvance(payload);
+      }));
+    } catch (error) {
+      console.error('No se pudo guardar el comentario:', error);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   const courseFilterOptions = useMemo(
     () => [
       { value: '', label: 'Todos los cursos' },
@@ -194,86 +279,119 @@ const TeacherDashboard = ({ initialTeacherId = null, currentProfile = null }) =>
     [teacherCourses]
   );
 
+  const exportPlan = () => {
+    const escapeHtml = (value) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const headers = ['Cédula', 'Estudiante', ...assignedSubjects.map((subject) => subject.name), 'Comentarios'];
+    const rows = filteredStudents.map((student) => [
+      student.documentId || '',
+      `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+      ...assignedSubjects.map((subject) => progressValues[`${student.id}-${subject.id}`] ?? 'Sin registro'),
+      commentValues[student.id] || '',
+    ]);
+    const tableRows = [headers, ...rows].map((row, rowIndex) => {
+      const cells = row.map((value) => `<td>${escapeHtml(value)}</td>`).join('');
+      return rowIndex === 0 ? `<tr class="header">${cells}</tr>` : `<tr>${cells}</tr>`;
+    }).join('');
+    const excelDocument = `<!DOCTYPE html>
+      <html xmlns:o="urn:schemas-microsoft-com:office:office"
+        xmlns:x="urn:schemas-microsoft-com:office:excel"
+        xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="UTF-8"><style>
+          table { border-collapse: collapse; }
+          th, td { border: 1px solid #d9e2f3; padding: 8px; }
+          .header { background: #2563eb; color: #ffffff; font-weight: bold; }
+        </style></head>
+        <body><table>${tableRows}</table></body>
+      </html>`;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([`\uFEFF${excelDocument}`], { type: 'application/vnd.ms-excel;charset=utf-8;' }));
+    link.download = 'planilla-avances.xls';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 100);
+  };
+
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Panel Docente</h2>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        {/* Left: Students list */}
-        <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold mb-2">Mis Estudiantes</h3>
-          <div className="text-sm text-gray-500 mb-3">Gestiona el avance académico</div>
-          <select
-            value={courseFilter}
-            onChange={(e) => {
-              setCourseFilter(e.target.value);
-              setSelectedStudent(null);
-              setEditingSubject(null);
-            }}
-            className="w-full border p-2 rounded mb-3"
-          >
-            {courseFilterOptions.map((option) => (
-              <option key={`course-opt-${option.value || 'all'}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <input placeholder="Buscar estudiante o cédula..." value={studentSearch} onChange={(e) => {
-              const v = e.target.value;
-              setStudentSearch(v);
-              // if user typed an exact cedula, auto-select student
-              const match = filteredStudents.find((s) => s.documentId === v);
-              if (match) {
-                setSelectedStudent(match);
-              }
-            }} className="w-full border p-2 rounded mb-3" />
-          <div className="space-y-2 max-h-96 overflow-auto">
-            {filteredStudents.map((st) => (
-              <div key={`student-${st.id || st.documentId}`} onClick={() => {
-                setSelectedStudent(st);
-                // Si hace clic en el estudiante, mostrar opción de seleccionar materia
-              }} className={`p-3 rounded border ${selectedStudent && selectedStudent.id === st.id ? 'ring-2 ring-blue-300' : ''} cursor-pointer hover:bg-blue-50 transition`}>
-                <div className="font-medium">{st.firstName} {st.lastName}</div>
-                <div className="text-xs text-gray-500">
-                  {st.documentId ? `Cédula: ${st.documentId} • ` : ''}{st.course || st.grade || 'Grado'} - Promedio: {st.average || '--'}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Middle: Courses Assigned */}
-        <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold mb-2">Cursos Asignados</h3>
-          <div className="text-sm text-gray-500 mb-3">Modifica el avance del estudiante</div>
+    <div className="min-h-screen bg-[#f4f7f5] px-4 py-6 text-slate-800 sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-[1600px]">
+        <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
-            {assignedSubjects.map((subj) => (
-              <div key={`subject-${subj.id || subj.name}-${subj.courseId || 'no-course'}`} className="mb-3">
-                <div onClick={() => selectedStudent && setEditingSubject(subj)} className={`cursor-pointer transition ${selectedStudent ? 'hover:shadow-md' : ''}`}>
-                  <CourseCard id={subj.id} name={subj.name} code={subj.courseId} teacherName={selectedTeacher ? `${selectedTeacher.firstName} ${selectedTeacher.lastName}` : subj.teacher} onSelect={() => selectedStudent && setEditingSubject(subj)} />
-                </div>
-                <div className="flex justify-end">
-                  <button disabled={!selectedStudent} onClick={() => setEditingSubject(subj)} className={`px-4 py-2 rounded ${selectedStudent ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'}`}>Modificar avance</button>
-                </div>
-              </div>
-            ))}
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-blue-700">Tu espacio de trabajo</p>
+            <h2 className="text-3xl font-bold tracking-tight">Panel docente <span className="text-blue-600">•</span></h2>
+            <p className="mt-2 text-sm text-slate-500">Todos tus estudiantes, avances y comentarios en una sola planilla.</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-blue-600" /> Año académico 2025 <span className="mx-3 text-slate-300">|</span> Periodo 2
           </div>
         </div>
 
-        {/* Right: Editor only */}
-        <div className="bg-white p-4 rounded shadow">
-          {editingSubject && selectedStudent ? (
-            <TeacherProgressPanel
-              key={`progress-${selectedStudent?.id || 'none'}-${editingSubject?.id || editingSubject?.name || 'none'}`}
-              student={selectedStudent}
-              subject={subjects.find(s => s.id === (editingSubject.id || editingSubject.name)) || editingSubject}
-              teacher={selectedTeacher}
-              onSaved={() => { setEditingSubject(null); /* refresh data */ loadData(); }}
-              onCancel={() => setEditingSubject(null)}
-            />
-          ) : (
-            <div className="text-sm text-gray-500">Seleccione un estudiante y haga clic en "Modificar avance" en la materia correspondiente.</div>
-          )}
+        <div className="mb-6 grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2">
+          <div className="flex items-center gap-4 border-slate-100 sm:border-r">
+            <div className="rounded-lg bg-blue-50 p-3 text-blue-700"><Users className="h-5 w-5" /></div>
+            <div><p className="text-xs text-slate-500">Estudiantes del curso</p><p className="text-2xl font-bold">{filteredStudents.length}</p><p className="text-xs text-slate-400">estudiantes visibles</p></div>
+          </div>
+          <div className="flex items-center gap-4 sm:pl-4">
+            <div className="rounded-lg bg-blue-50 p-3 text-blue-700"><GraduationCap className="h-5 w-5" /></div>
+            <div><p className="text-xs text-slate-500">Materias asignadas</p><p className="text-2xl font-bold">{assignedSubjects.length}</p><p className="text-xs text-slate-400">en este curso</p></div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-5 md:flex-row md:items-center">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-blue-50 p-2 text-blue-700"><LayoutGrid className="h-5 w-5" /></div>
+              <div><h3 className="font-semibold">Planilla de avances</h3><p className="text-xs text-slate-500">{activeTeacher ? `${activeTeacher.firstName || ''} ${activeTeacher.lastName || ''}`.trim() : 'Docente'} · {filteredStudents.length} estudiantes</p></div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={exportPlan} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"><Download className="h-4 w-4" /> Exportar</button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 p-4 md:flex-row">
+            <select value={courseFilter} onChange={(e) => { setCourseFilter(e.target.value); setSelectedStudent(null); setEditingSubject(null); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500">
+              {courseFilterOptions.map((option) => <option key={`course-opt-${option.value || 'all'}`} value={option.value}>{option.label}</option>)}
+            </select>
+            <div className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input placeholder="Buscar estudiante o cédula..." value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500" /></div>
+            <button type="button" className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600"><Filter className="h-4 w-4" /> Filtros</button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[900px] w-full text-left text-base">
+              <thead className="bg-slate-50 text-sm uppercase tracking-wide text-slate-500"><tr><th className="w-36 px-6 py-5">Cédula</th><th className="min-w-[260px] px-5 py-5">Estudiante</th>{assignedSubjects.map((subject) => <th key={subject.id} className="min-w-[180px] px-5 py-5">{subject.name}<span className="mt-1 block text-xs font-normal normal-case">Avance académico</span></th>)}<th className="min-w-[240px] px-5 py-5">Comentarios</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredStudents.map((student, index) => <tr key={student.id} className={`hover:bg-blue-50/40 ${selectedStudent?.id === student.id ? 'bg-blue-50/30' : ''}`}>
+                  <td className="px-6 py-5 text-sm text-slate-500">{student.documentId || '—'}</td>
+                  <td className="px-5 py-5"><button type="button" onClick={() => setSelectedStudent(student)} className="flex items-center gap-3 text-left font-medium text-slate-700 hover:text-blue-700"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">{`${student.firstName || ''} ${student.lastName || ''}`.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>{student.firstName} {student.lastName}</button></td>
+                  {assignedSubjects.map((subject) => {
+                    const progress = progressValues[`${student.id}-${subject.id}`];
+                    const barColor = progress === null || progress === undefined ? 'bg-slate-300' : progress >= 80 ? 'bg-blue-600' : progress >= 60 ? 'bg-amber-400' : 'bg-orange-400';
+                    const key = `${student.id}-${subject.id}`;
+                    return <td key={key} className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <input type="number" min="0" max="100" value={progress ?? ''} placeholder="0" onChange={(event) => setProgressValues((current) => ({ ...current, [key]: event.target.value }))} onBlur={(event) => saveProgress(student, subject, event.target.value)} className="w-20 rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-500" aria-label={`Avance de ${subject.name}`} />
+                        <span className="text-xs">%</span>
+                      </div>
+                      <span className="mt-2 block h-2 w-32 rounded-full bg-slate-100"><span className={`block h-2 rounded-full ${barColor}`} style={{ width: `${progress || 0}%` }} /></span>
+                      {savingKey === key && <span className="text-[10px] text-blue-600">Guardando...</span>}
+                    </td>;
+                  })}
+                  <td className="px-5 py-4">
+                    <textarea value={commentValues[student.id] || ''} onChange={(event) => setCommentValues((current) => ({ ...current, [student.id]: event.target.value }))} onBlur={() => saveComment(student)} placeholder="Agregar comentario..." maxLength={500} className="min-h-10 w-56 rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" aria-label={`Comentario de ${student.firstName} ${student.lastName}`} />
+                    {savingKey === `comment-${student.id}` && <span className="block text-[10px] text-blue-600">Guardando...</span>}
+                  </td>
+                </tr>)}
+              </tbody>
+            </table>
+            {filteredStudents.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No hay estudiantes que coincidan con la búsqueda.</p>}
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          {editingSubject && selectedStudent ? <TeacherProgressPanel key={`progress-${selectedStudent?.id || 'none'}-${editingSubject?.id || editingSubject?.name || 'none'}`} student={selectedStudent} subject={subjects.find((s) => s.id === (editingSubject.id || editingSubject.name)) || editingSubject} teacher={activeTeacher} onSaved={() => { setEditingSubject(null); loadData(); }} onCancel={() => setEditingSubject(null)} /> : <div className="py-4 text-center text-sm text-slate-500">Selecciona una materia en la planilla para modificar el avance.</div>}
         </div>
       </div>
     </div>

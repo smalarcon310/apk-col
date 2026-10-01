@@ -145,12 +145,12 @@ export const SubjectsModule = ({ currentProfile }) => {
   // Cargar materias y cursos
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentProfile?.role, currentProfile?.teacherId]);
 
   // Filtrar materias
   useEffect(() => {
     let filtered = subjects.filter((subject) =>
-      `${subject.name} ${subject.teacher} ${subject.description || ''}`
+      `${subject.name} ${currentProfile?.role === 'teacher' ? '' : subject.teacher} ${subject.description || ''}`
         .toLowerCase()
         .includes(searchTerm.toLowerCase())
     );
@@ -160,7 +160,7 @@ export const SubjectsModule = ({ currentProfile }) => {
     }
 
     setFilteredSubjects(filtered);
-  }, [subjects, searchTerm, filterCourse]);
+  }, [subjects, searchTerm, filterCourse, currentProfile?.role]);
 
   const loadData = async () => {
     try {
@@ -204,9 +204,10 @@ export const SubjectsModule = ({ currentProfile }) => {
   };
 
   const handleEdit = (subject) => {
-    // Solo el Rector puede editar materias
-    if (currentProfile && currentProfile.role !== 'rector') {
-      setAlert({ type: 'error', title: 'Acceso denegado', message: 'Solo el Rector puede editar materias.' });
+    const isAdministrator = currentProfile?.role === 'rector' || currentProfile?.role === 'admin';
+    const isOwner = currentProfile?.role === 'teacher' && subject.teacherId === currentProfile.teacherId;
+    if (!isAdministrator && !isOwner) {
+      setAlert({ type: 'error', title: 'Acceso denegado', message: 'Solo puedes editar tus propias materias.' });
       return;
     }
     setSelectedSubject(subject);
@@ -216,9 +217,10 @@ export const SubjectsModule = ({ currentProfile }) => {
   const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
 
   const handleDelete = (subject) => {
-    // Solo el Rector puede eliminar materias
-    if (currentProfile && currentProfile.role !== 'rector') {
-      setAlert({ type: 'error', title: 'Acceso denegado', message: 'Solo el Rector puede eliminar materias.' });
+    const isAdministrator = currentProfile?.role === 'rector' || currentProfile?.role === 'admin';
+    const isOwner = currentProfile?.role === 'teacher' && subject.teacherId === currentProfile.teacherId;
+    if (!isAdministrator && !isOwner) {
+      setAlert({ type: 'error', title: 'Acceso denegado', message: 'Solo puedes eliminar tus propias materias.' });
       return;
     }
 
@@ -400,8 +402,8 @@ export const SubjectsModule = ({ currentProfile }) => {
       {/* Búsqueda y Filtros */}
       <div className="flex gap-4">
         <div className="flex-1">
-          <SearchInput
-            placeholder="Buscar por nombre, docente o descripción..."
+            <SearchInput
+              placeholder={currentProfile?.role === 'teacher' ? 'Buscar por nombre o descripción...' : 'Buscar por nombre, docente o descripción...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             loading={loading}

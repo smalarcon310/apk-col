@@ -143,7 +143,7 @@ const RemoteAPIModule = () => {
                 <h3 className="font-semibold text-yellow-900">Autenticación Requerida</h3>
                 <p className="text-yellow-700 mt-2">
                   Para usar la integración con la API remota, debes iniciar sesión primero.
-                  Navega a la página de login y autentica con Firebase.
+                  Navega a la página de login y autentícate para continuar.
                 </p>
               </div>
             </div>

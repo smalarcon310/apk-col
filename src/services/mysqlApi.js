@@ -4,14 +4,25 @@ const API_BASE_URL = configuredApiUrl.replace('localhost', window.location.hostn
 export async function mysqlRequest(endpoint, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
+  let session = null;
+  try { session = JSON.parse(localStorage.getItem('sessionUser') || 'null'); } catch {}
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: options.method || 'GET',
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.sessionToken ? { Authorization: `Bearer ${session.sessionToken}` } : {}),
+        ...(options.headers || {}),
+      },
       body: options.body ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
     const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      localStorage.removeItem('sessionUser');
+      localStorage.removeItem('userData');
+      window.location.href = '/login';
+    }
     if (!response.ok) throw new Error(data.error || data.message || `Error ${response.status}`);
     return data;
   } catch (error) {

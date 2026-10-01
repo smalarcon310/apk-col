@@ -29,7 +29,6 @@
     "start": "cross-env DISABLE_ESLINT_PLUGIN=true react-scripts start",
     "build": "cross-env DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test",
-    "migrate:subjects-teacherid": "node ./scripts/migrate_subjects_teacherId.js",
     "api": "node server/index.js",
     "api:dev": "node --watch server/index.js",
     "eject": "react-scripts eject"

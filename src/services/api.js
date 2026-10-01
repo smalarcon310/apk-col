@@ -9,9 +9,9 @@ const api = axios.create({
 // Interceptor: Agregar Authorization header
 api.interceptors.request.use(
   (config) => {
-    const firebaseUID = localStorage.getItem('firebaseUID');
-    if (firebaseUID) {
-      config.headers.Authorization = `Bearer ${firebaseUID}`;
+    const sessionUser = JSON.parse(localStorage.getItem('sessionUser') || 'null');
+    if (sessionUser?.id) {
+      config.headers.Authorization = `Bearer ${sessionUser.id}`;
     }
     return config;
   },
@@ -27,7 +27,6 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Token inválido o expirado
-      localStorage.removeItem('firebaseUID');
       localStorage.removeItem('userData');
       window.location.href = '/login';
     }
