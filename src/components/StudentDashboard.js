@@ -47,19 +47,21 @@ const StudentDashboard = ({ currentProfile }) => {
           const subjects = studentInfo?.courseId
             ? allSubjects.filter((subject) => subject.courseId === studentInfo.courseId)
             : allSubjects;
+          const attendanceRecords = [];
           const rows = await Promise.all(
             subjects.map(async (subj) => {
               let advances = await getAdvancesByStudentAndSubject(studentId, subj.id);
               advances = (advances || []).filter((advance) => advance.status !== 'draft');
+              attendanceRecords.push(...advances);
               let current = 0;
               let previous = 0;
               let latestComment = '';
               if (advances && advances.length > 0) {
-                const last = advances[advances.length - 1];
+                const last = advances[0];
                 current = last.progress ?? last.average ?? 0;
                 latestComment = (last.comments || last.comment || '').toString().trim();
                 if (advances.length > 1) {
-                  const prev = advances[advances.length - 2];
+                  const prev = advances[1];
                   previous = prev.progress ?? prev.average ?? 0;
                 }
               }
@@ -88,6 +90,15 @@ const StudentDashboard = ({ currentProfile }) => {
             rows.length > 0
               ? Math.round(rows.reduce((sum, r) => sum + r.previous, 0) / rows.length)
               : 0;
+          const recordedAttendance = attendanceRecords.filter(
+            (advance) => advance.attendance !== null && advance.attendance !== undefined
+          );
+          const attendancePercentage = recordedAttendance.length > 0
+            ? Math.round(
+              (recordedAttendance.filter((advance) => !Boolean(advance.attendance)).length
+                / recordedAttendance.length) * 100
+            )
+            : 0;
 
           setStudentData({
             name:
@@ -97,9 +108,9 @@ const StudentDashboard = ({ currentProfile }) => {
             grade: studentInfo?.grade ? `Grado ${studentInfo.grade}` : '',
             studentId:
               studentInfo?.documentId || studentInfo?.id || studentId || '',
-            averageGrade: studentInfo?.averageGrade || 0,
+            averageGrade: avgProgress,
             currentProgress: avgProgress,
-            attendance: studentInfo?.attendance || 0,
+            attendance: attendancePercentage,
             weekProgress: avgProgress - avgPrevious,
             subjects: rows,
             motivationMessage:

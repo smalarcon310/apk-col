@@ -12,7 +12,8 @@
 import { auth } from './sessionAuth';
 
 // URL base de la API remota
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3002';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL
+  ?? (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3002');
 
 /**
  * Obtiene el identificador del usuario autenticado

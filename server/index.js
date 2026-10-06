@@ -16,7 +16,7 @@ app.use(cors({
     callback(null, !origin || origin === configuredOrigin || isLocalDevelopmentOrigin);
   },
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 const getChatContext = async (user) => {
   if (user.role === 'rector' || user.role === 'admin') {
@@ -162,8 +162,18 @@ const publicUser = (user) => ({
   documentId: user.documentId || user.cedula || null,
   role: user.role,
   teacherId: user.teacherId || null,
+  studentId: user.studentId || null,
   sessionToken: createSessionToken(user.id),
 });
+
+const getLinkedStudentId = async (user) => {
+  if (!user || user.role !== 'guardian') return null;
+  const [[link]] = await pool.query(
+    'SELECT student_id AS studentId FROM guardians WHERE auth_uid = ? ORDER BY created_at ASC LIMIT 1',
+    [user.id]
+  );
+  return link?.studentId || null;
+};
 
 app.get('/health', async (_req, res) => {
   try {
@@ -182,19 +192,52 @@ const validPassword = (password, stored) => {
   return timingSafeEqual(Buffer.from(hash, 'hex'), scryptSync(password, salt, 64));
 };
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password, name = '', firstName = '', lastName = '', role = 'student', cedula = `TEMP-${randomUUID()}` } = req.body;
+  const { email, password, name = '', firstName = '', lastName = '', cedula = `TEMP-${randomUUID()}` } = req.body;
   if (!email || !password || (!name && !firstName)) return res.status(400).json({ error: 'Correo, nombre y contraseña son obligatorios' });
+  const studentDocumentId = String(cedula || '').trim();
+  if (!studentDocumentId) return res.status(400).json({ error: 'La cédula del estudiante es obligatoria' });
+  let connection;
   try {
-    const id = randomUUID();
-    const [result] = await pool.query(
-      'INSERT INTO users (id, cedula, email, name, last_name, password_hash, role, subject_progress) VALUES (?, ?, ?, ?, ?, ?, ?, JSON_OBJECT())',
-      [id, cedula, email.toLowerCase(), name || firstName, lastName, hashPassword(password), role]
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[student]] = await connection.query(
+      'SELECT id FROM students WHERE document_id = ?',
+      [studentDocumentId]
     );
-    return res.status(201).json(publicUser({ id, email: email.toLowerCase(), name: name || firstName, last_name: lastName, role }));
+    if (!student) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'La cédula debe corresponder a un estudiante registrado' });
+    }
+
+    const id = randomUUID();
+    await connection.query(
+      'INSERT INTO users (id, cedula, email, name, last_name, password_hash, role, subject_progress) VALUES (?, ?, ?, ?, ?, ?, ?, JSON_OBJECT())',
+      [id, studentDocumentId, email.toLowerCase(), name || firstName, lastName, hashPassword(password), 'guardian']
+    );
+
+    await connection.query(
+      `INSERT INTO guardians (id, auth_uid, student_id, relationship)
+       VALUES (?, ?, ?, NULL)
+       ON DUPLICATE KEY UPDATE student_id = VALUES(student_id)`,
+      [randomUUID(), id, student.id]
+    );
+    await connection.commit();
+    return res.status(201).json(publicUser({
+      id,
+      email: email.toLowerCase(),
+      name: name || firstName,
+      last_name: lastName,
+      role: 'guardian',
+      studentId: student.id,
+      documentId: studentDocumentId,
+    }));
   } catch (error) {
+    if (connection) await connection.rollback();
     if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'El correo o documento ya está registrado' });
     console.error('Error registering user:', error.message);
     return res.status(500).json({ error: 'No se pudo registrar el usuario' });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
@@ -208,6 +251,7 @@ app.post('/api/auth/login', async (req, res) => {
       WHERE u.email = ?
     `, [String(email || '').toLowerCase()]);
     if (!user || !validPassword(password, user.password_hash)) return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+    user.studentId = await getLinkedStudentId(user);
     return res.json(publicUser(user));
   } catch (error) {
     console.error('Error logging in:', error.message);
@@ -228,6 +272,7 @@ app.get('/api/auth/session/:userId', authenticateRequest, async (req, res) => {
       WHERE u.id = ?
     `, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    user.studentId = await getLinkedStudentId(user);
     return res.json(publicUser(user));
   } catch (error) {
     console.error('Error loading session user:', error.message);
@@ -256,13 +301,20 @@ app.get('/api/auth/student-by-document/:documentId', async (req, res) => {
 app.get('/api/docentes', authenticateRequest, async (req, res) => {
   try {
     const teacherId = await getTeacherIdForUser(req.authUser);
-    const [rows] = await pool.query(`
-      SELECT id, first_name AS firstName, last_name AS lastName,
-              document_id AS documentId, email, phone, specialization
-      FROM teachers
-      ${teacherId ? 'WHERE id = ?' : ''}
-      ORDER BY first_name, last_name
-    `, teacherId ? [teacherId] : []);
+    const [rows] = teacherId
+      ? await pool.query(`
+        SELECT id, first_name AS firstName, last_name AS lastName,
+               document_id AS documentId, email, phone, specialization
+        FROM teachers
+        WHERE id = ?
+        ORDER BY first_name, last_name
+      `, [teacherId])
+      : await pool.query(`
+        SELECT id, first_name AS firstName, last_name AS lastName,
+               document_id AS documentId, email, phone, specialization
+        FROM teachers
+        ORDER BY first_name, last_name
+      `);
     res.json(rows);
   } catch (error) {
     console.error('Error loading teachers:', error.message);
@@ -345,13 +397,23 @@ app.get('/api/cursos', authenticateRequest, async (req, res) => {
 
 app.get('/api/cursos/:id', authenticateRequest, async (req, res) => {
   try {
-    const params = [req.params.id];
-    const teacherJoin = req.authUser.role === 'teacher' ? ' AND EXISTS (SELECT 1 FROM subjects assigned_subject WHERE assigned_subject.course_id = c.id AND assigned_subject.teacher_id = ?)' : '';
-    if (teacherJoin) params.push(await getTeacherIdForUser(req.authUser));
-    const [[course]] = await pool.query(`
-      SELECT id, name, grade, academic_year AS academicYear, description
-      FROM courses c WHERE c.id = ?${teacherJoin}
-    `, params);
+    const [[course]] = req.authUser.role === 'teacher'
+      ? await pool.query(`
+        SELECT id, name, grade, academic_year AS academicYear, description
+        FROM courses c
+        WHERE c.id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM subjects assigned_subject
+            WHERE assigned_subject.course_id = c.id
+              AND assigned_subject.teacher_id = ?
+          )
+      `, [req.params.id, await getTeacherIdForUser(req.authUser)])
+      : await pool.query(`
+        SELECT id, name, grade, academic_year AS academicYear, description
+        FROM courses c
+        WHERE c.id = ?
+      `, [req.params.id]);
     if (!course) return res.status(404).json({ error: 'El curso no existe' });
     res.json(course);
   } catch (error) {
@@ -460,23 +522,30 @@ app.get('/api/materias', authenticateRequest, async (req, res) => {
 
 app.get('/api/materias/:id', authenticateRequest, async (req, res) => {
   try {
-    const params = [req.params.id];
-    let ownerFilter = '';
+    let subject;
     if (req.authUser.role === 'teacher') {
       const teacherId = await getTeacherIdForUser(req.authUser);
       if (!teacherId) return res.status(403).json({ error: 'Docente no asociado a una cuenta válida' });
-      ownerFilter = ' AND s.teacher_id = ?';
-      params.push(teacherId);
+      [[subject]] = await pool.query(`
+        SELECT s.id, s.name, s.course_id AS courseId, s.teacher_id AS teacherId,
+               s.description, c.name AS courseName,
+               CONCAT(t.first_name, ' ', t.last_name) AS teacher
+        FROM subjects s
+        LEFT JOIN courses c ON c.id = s.course_id
+        LEFT JOIN teachers t ON t.id = s.teacher_id
+        WHERE s.id = ? AND s.teacher_id = ?
+      `, [req.params.id, teacherId]);
+    } else {
+      [[subject]] = await pool.query(`
+        SELECT s.id, s.name, s.course_id AS courseId, s.teacher_id AS teacherId,
+               s.description, c.name AS courseName,
+               CONCAT(t.first_name, ' ', t.last_name) AS teacher
+        FROM subjects s
+        LEFT JOIN courses c ON c.id = s.course_id
+        LEFT JOIN teachers t ON t.id = s.teacher_id
+        WHERE s.id = ?
+      `, [req.params.id]);
     }
-    const [[subject]] = await pool.query(`
-      SELECT s.id, s.name, s.course_id AS courseId, s.teacher_id AS teacherId,
-             s.description, c.name AS courseName,
-             CONCAT(t.first_name, ' ', t.last_name) AS teacher
-      FROM subjects s
-      LEFT JOIN courses c ON c.id = s.course_id
-      LEFT JOIN teachers t ON t.id = s.teacher_id
-      WHERE s.id = ?${ownerFilter}
-    `, params);
     if (!subject) return res.status(404).json({ error: 'La materia no existe' });
     res.json(subject);
   } catch (error) {
@@ -579,23 +648,34 @@ app.delete('/api/materias/:id', authenticateRequest, async (req, res) => {
 
 app.get('/api/estudiantes', authenticateRequest, async (req, res) => {
   try {
-    const params = [];
-    let scope = '';
     if (req.authUser.role === 'teacher') {
       const teacherId = await getTeacherIdForUser(req.authUser);
       if (!teacherId) return res.json([]);
-      scope = 'WHERE EXISTS (SELECT 1 FROM subjects assigned_subject WHERE assigned_subject.course_id = s.course_id AND assigned_subject.teacher_id = ?)';
-      params.push(teacherId);
+      const [rows] = await pool.query(`
+        SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
+               s.document_id AS documentId, s.email, s.phone, s.grade,
+               c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
+        FROM students s
+        LEFT JOIN courses c ON c.id = s.course_id
+        WHERE EXISTS (
+          SELECT 1
+          FROM subjects assigned_subject
+          WHERE assigned_subject.course_id = s.course_id
+            AND assigned_subject.teacher_id = ?
+        )
+        ORDER BY s.first_name, s.last_name
+      `, [teacherId]);
+      return res.json(rows);
     }
+
     const [rows] = await pool.query(`
       SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
              s.document_id AS documentId, s.email, s.phone, s.grade,
              c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
       FROM students s
       LEFT JOIN courses c ON c.id = s.course_id
-      ${scope}
       ORDER BY s.first_name, s.last_name
-    `, params);
+    `);
     res.json(rows);
   } catch (error) {
     console.error('Error loading students:', error.message);
@@ -603,24 +683,256 @@ app.get('/api/estudiantes', authenticateRequest, async (req, res) => {
   }
 });
 
+app.get('/api/acudientes/:uid', authenticateRequest, async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT g.id, g.auth_uid AS authUid, g.student_id AS studentId,
+             g.relationship, u.email, u.name, u.last_name AS lastName,
+             s.document_id AS studentDocumentId
+      FROM guardians g
+      INNER JOIN users u ON u.id = g.auth_uid
+      INNER JOIN students s ON s.id = g.student_id
+      WHERE g.auth_uid = ?
+      ORDER BY g.created_at DESC
+    `, [req.params.uid]);
+    res.json(rows[0] || null);
+  } catch (error) {
+    console.error('Error loading guardian:', error.message);
+    res.status(500).json({ error: 'No se pudo cargar el acudiente' });
+  }
+});
+
+app.get('/api/acudientes', authenticateRequest, requireRoles('rector', 'admin'), async (_req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT g.id, g.auth_uid AS authUid, g.student_id AS studentId,
+             g.relationship, u.cedula AS documentId, u.name AS firstName,
+             u.last_name AS lastName, u.email, u.phone,
+             s.document_id AS studentDocumentId,
+             CONCAT(s.first_name, ' ', s.last_name) AS studentName
+      FROM guardians g
+      INNER JOIN users u ON u.id = g.auth_uid
+      INNER JOIN students s ON s.id = g.student_id
+      ORDER BY u.name, u.last_name
+    `);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error loading guardians:', error.message);
+    res.status(500).json({ error: 'No se pudieron cargar los padres de familia' });
+  }
+});
+
+app.put('/api/acudientes/:id', authenticateRequest, requireRoles('rector', 'admin'), async (req, res) => {
+  const { firstName, lastName, email, phone = '', relationship = null, studentId, password = '' } = req.body;
+  if (!firstName || !lastName || !email || !studentId) {
+    return res.status(400).json({ error: 'Nombre, apellido, correo y estudiante son obligatorios' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+    return res.status(400).json({ error: 'El correo no es válido' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[guardian]] = await connection.query(
+      'SELECT auth_uid AS authUid FROM guardians WHERE id = ?',
+      [req.params.id]
+    );
+    if (!guardian) return res.status(404).json({ error: 'El padre de familia no existe' });
+    const [[student]] = await connection.query('SELECT id FROM students WHERE id = ?', [studentId]);
+    if (!student) return res.status(404).json({ error: 'El estudiante no existe' });
+    const passwordUpdate = String(password).trim();
+    if (passwordUpdate) {
+      await connection.query(
+        'UPDATE users SET name = ?, last_name = ?, email = ?, phone = ?, password_hash = ? WHERE id = ?',
+        [String(firstName).trim(), String(lastName).trim(), String(email).trim().toLowerCase(), String(phone).trim(), hashPassword(passwordUpdate), guardian.authUid]
+      );
+    } else {
+      await connection.query(
+        'UPDATE users SET name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?',
+        [String(firstName).trim(), String(lastName).trim(), String(email).trim().toLowerCase(), String(phone).trim(), guardian.authUid]
+      );
+    }
+    await connection.query(
+      'UPDATE guardians SET student_id = ?, relationship = ? WHERE id = ?',
+      [studentId, String(relationship || '').trim() || null, req.params.id]
+    );
+    await connection.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    await connection.rollback();
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'El correo ya está registrado' });
+    if (error.code === 'ER_NO_REFERENCED_ROW_2') return res.status(404).json({ error: 'El estudiante no existe' });
+    console.error('Error updating guardian:', error.message);
+    res.status(500).json({ error: 'No se pudo actualizar el padre de familia' });
+  } finally {
+    connection.release();
+  }
+});
+
+app.delete('/api/acudientes/:id', authenticateRequest, requireRoles('rector', 'admin'), async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM guardians WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'El vínculo no existe' });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error deleting guardian:', error.message);
+    res.status(500).json({ error: 'No se pudo eliminar el vínculo del padre' });
+  }
+});
+
+app.post('/api/acudientes', authenticateRequest, async (req, res) => {
+  const { authUid, studentId, relationship = null } = req.body;
+  if (!authUid || !studentId) return res.status(400).json({ error: 'Acudiente y estudiante son obligatorios' });
+
+  try {
+    const id = randomUUID();
+    await pool.query(
+      'INSERT INTO guardians (id, auth_uid, student_id, relationship) VALUES (?, ?, ?, ?)',
+      [id, authUid, studentId, relationship]
+    );
+    res.status(201).json({ id, authUid, studentId, relationship });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'El acudiente ya está vinculado a este estudiante' });
+    if (error.code === 'ER_NO_REFERENCED_ROW_2') return res.status(404).json({ error: 'El estudiante o usuario no existe' });
+    console.error('Error creating guardian:', error.message);
+    res.status(500).json({ error: 'No se pudo vincular el acudiente' });
+  }
+});
+
+app.post('/api/acudientes/importar', authenticateRequest, requireRoles('rector', 'admin'), async (req, res) => {
+  const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+  if (!rows.length) return res.status(400).json({ error: 'El archivo no contiene registros' });
+  if (rows.length > 1000) return res.status(400).json({ error: 'El archivo no puede superar 1000 registros' });
+
+  const results = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index] || {};
+    const studentDocumentId = String(row.studentDocumentId || '').trim();
+    const email = String(row.email || '').trim().toLowerCase();
+    const firstName = String(row.firstName || '').trim();
+    const lastName = String(row.lastName || '').trim();
+    const phone = String(row.phone || '').trim();
+    const relationship = String(row.relationship || '').trim() || null;
+    const suppliedPassword = String(row.password || '').trim();
+
+    if (!studentDocumentId || !email || !firstName || !lastName) {
+      results.push({ row: index + 2, status: 'error', message: 'Faltan documento del estudiante, nombre, apellido o correo del padre' });
+      continue;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      results.push({ row: index + 2, status: 'error', message: 'El correo no es válido' });
+      continue;
+    }
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [[student]] = await connection.query('SELECT id FROM students WHERE document_id = ?', [studentDocumentId]);
+      if (!student) throw new Error('No existe un estudiante con ese documento');
+
+      const [[existingUser]] = await connection.query(
+        'SELECT id, role FROM users WHERE LOWER(email) = LOWER(?)',
+        [email]
+      );
+      let userId = existingUser?.id;
+      let temporaryPassword = null;
+
+      if (existingUser && existingUser.role !== 'guardian') {
+        throw new Error('El correo ya pertenece a un usuario con otro rol');
+      }
+      if (!existingUser) {
+        userId = randomUUID();
+        temporaryPassword = suppliedPassword || `Serma-${randomUUID().slice(0, 8)}`;
+        await connection.query(
+          'INSERT INTO users (id, cedula, email, name, last_name, phone, password_hash, role, subject_progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, JSON_OBJECT())',
+          [userId, `ACU-${randomUUID().replace(/-/g, '').slice(0, 16)}`, email, firstName, lastName, phone, hashPassword(temporaryPassword), 'guardian']
+        );
+      }
+
+      await connection.query(
+        `INSERT INTO guardians (id, auth_uid, student_id, relationship)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE relationship = COALESCE(VALUES(relationship), relationship)`,
+        [randomUUID(), userId, student.id, relationship]
+      );
+      await connection.commit();
+      results.push({
+        row: index + 2,
+        status: existingUser ? 'linked' : 'created',
+        email,
+        studentDocumentId,
+        ...(temporaryPassword ? { temporaryPassword } : {}),
+      });
+    } catch (error) {
+      await connection.rollback();
+      results.push({ row: index + 2, status: 'error', message: error.message || 'No se pudo importar la fila' });
+    } finally {
+      connection.release();
+    }
+  }
+
+  const created = results.filter((item) => item.status === 'created').length;
+  const linked = results.filter((item) => item.status === 'linked').length;
+  const errors = results.filter((item) => item.status === 'error').length;
+  res.status(200).json({ created, linked, errors, results });
+});
+
+app.get('/api/rector/resumen', authenticateRequest, requireRoles('rector', 'admin'), async (_req, res) => {
+  try {
+    const [[summary]] = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM users) AS totalUsers,
+        (SELECT COUNT(*) FROM users WHERE role = 'student') AS studentsUsers,
+        (SELECT COUNT(*) FROM users WHERE role = 'guardian') AS guardianUsers,
+        (SELECT COUNT(*) FROM users WHERE role = 'teacher') AS teacherUsers,
+        (SELECT COUNT(*) FROM users WHERE role = 'rector') AS rectorUsers,
+        (SELECT COUNT(*) FROM students) AS students,
+        (SELECT COUNT(*) FROM teachers) AS teachers,
+        (SELECT COUNT(*) FROM guardians) AS guardianLinks,
+        (SELECT COUNT(*) FROM courses) AS courses,
+        (SELECT COUNT(*) FROM subjects) AS subjects,
+        (SELECT COUNT(*) FROM avances) AS advances,
+        (SELECT ROUND(AVG(average), 1) FROM avances) AS averagePerformance,
+        (SELECT COUNT(*) FROM avances WHERE average < 60) AS advancesAtRisk
+    `);
+    res.json(summary);
+  } catch (error) {
+    console.error('Error loading rector summary:', error.message);
+    res.status(500).json({ error: 'No se pudo cargar el resumen del rector' });
+  }
+});
+
 app.get('/api/estudiantes/:id', authenticateRequest, async (req, res) => {
   try {
-    const params = [req.params.id];
-    let scope = '';
+    let student;
     if (req.authUser.role === 'teacher') {
       const teacherId = await getTeacherIdForUser(req.authUser);
       if (!teacherId) return res.status(403).json({ error: 'Docente no asociado a una cuenta válida' });
-      scope = ' AND EXISTS (SELECT 1 FROM subjects assigned_subject WHERE assigned_subject.course_id = s.course_id AND assigned_subject.teacher_id = ?)';
-      params.push(teacherId);
+      [[student]] = await pool.query(`
+        SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
+               s.document_id AS documentId, s.email, s.phone, s.grade,
+               c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
+        FROM students s
+        LEFT JOIN courses c ON c.id = s.course_id
+        WHERE s.id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM subjects assigned_subject
+            WHERE assigned_subject.course_id = s.course_id
+              AND assigned_subject.teacher_id = ?
+          )
+      `, [req.params.id, teacherId]);
+    } else {
+      [[student]] = await pool.query(`
+        SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
+               s.document_id AS documentId, s.email, s.phone, s.grade,
+               c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
+        FROM students s
+        LEFT JOIN courses c ON c.id = s.course_id
+        WHERE s.id = ?
+      `, [req.params.id]);
     }
-    const [[student]] = await pool.query(`
-      SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
-             s.document_id AS documentId, s.email, s.phone, s.grade,
-             c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
-      FROM students s
-      LEFT JOIN courses c ON c.id = s.course_id
-      WHERE s.id = ?${scope}
-    `, params);
     if (!student) return res.status(404).json({ error: 'El estudiante no existe' });
     res.json(student);
   } catch (error) {
@@ -631,24 +943,37 @@ app.get('/api/estudiantes/:id', authenticateRequest, async (req, res) => {
 
 app.get('/api/estudiantes/email/:email', authenticateRequest, async (req, res) => {
   try {
-    const params = [decodeURIComponent(req.params.email)];
-    let scope = '';
+    const email = decodeURIComponent(req.params.email);
+    let student;
     if (req.authUser.role === 'teacher') {
       const teacherId = await getTeacherIdForUser(req.authUser);
       if (!teacherId) return res.json(null);
-      scope = ' AND EXISTS (SELECT 1 FROM subjects assigned_subject WHERE assigned_subject.course_id = s.course_id AND assigned_subject.teacher_id = ?)';
-      params.push(teacherId);
+      [[student]] = await pool.query(`
+        SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
+               s.document_id AS documentId, s.email, s.phone, s.grade,
+               c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
+        FROM students s
+        LEFT JOIN courses c ON c.id = s.course_id
+        WHERE LOWER(s.email) = LOWER(?)
+          AND EXISTS (
+            SELECT 1
+            FROM subjects assigned_subject
+            WHERE assigned_subject.course_id = s.course_id
+              AND assigned_subject.teacher_id = ?
+          )
+        LIMIT 1
+      `, [email, teacherId]);
+    } else {
+      [[student]] = await pool.query(`
+        SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
+               s.document_id AS documentId, s.email, s.phone, s.grade,
+               c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
+        FROM students s
+        LEFT JOIN courses c ON c.id = s.course_id
+        WHERE LOWER(s.email) = LOWER(?)
+        LIMIT 1
+      `, [email]);
     }
-    const [[student]] = await pool.query(`
-      SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
-             s.document_id AS documentId, s.email, s.phone, s.grade,
-             c.id AS courseId, c.name AS courseName, c.academic_year AS academicYear
-      FROM students s
-      LEFT JOIN courses c ON c.id = s.course_id
-      WHERE LOWER(s.email) = LOWER(?)
-      ${scope}
-      LIMIT 1
-    `, params);
     res.json(student || null);
   } catch (error) {
     console.error('Error loading student by email:', error.message);
@@ -727,19 +1052,32 @@ app.put('/api/estudiantes/:id', authenticateRequest, requireRoles('rector', 'adm
 
 app.get('/api/estudiantes/document/:documentId', authenticateRequest, async (req, res) => {
   try {
-    const params = [req.params.documentId];
-    let scope = '';
+    let student;
     if (req.authUser.role === 'teacher') {
       const teacherId = await getTeacherIdForUser(req.authUser);
       if (!teacherId) return res.json(null);
-      scope = ' AND EXISTS (SELECT 1 FROM subjects assigned_subject WHERE assigned_subject.course_id = s.course_id AND assigned_subject.teacher_id = ?)';
-      params.push(teacherId);
+      [[student]] = await pool.query(`
+        SELECT s.id, s.first_name AS firstName, s.last_name AS lastName,
+               s.document_id AS documentId, s.email, s.phone, s.grade,
+               s.course_id AS courseId
+        FROM students s
+        WHERE s.document_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM subjects assigned_subject
+            WHERE assigned_subject.course_id = s.course_id
+              AND assigned_subject.teacher_id = ?
+          )
+      `, [req.params.documentId, teacherId]);
+    } else {
+      [[student]] = await pool.query(`
+        SELECT id, first_name AS firstName, last_name AS lastName,
+               document_id AS documentId, email, phone, grade,
+               course_id AS courseId
+        FROM students
+        WHERE document_id = ?
+      `, [req.params.documentId]);
     }
-    const [[student]] = await pool.query(`
-      SELECT id, first_name AS firstName, last_name AS lastName,
-             document_id AS documentId, email, phone, grade, course_id AS courseId
-      FROM students s WHERE document_id = ?${scope}
-    `, params);
     res.json(student || null);
   } catch (error) {
     console.error('Error loading student by document:', error.message);
@@ -749,28 +1087,24 @@ app.get('/api/estudiantes/document/:documentId', authenticateRequest, async (req
 
 app.get('/api/avances/estudiante/:studentId', authenticateRequest, async (req, res) => {
   try {
-    const params = [req.params.studentId];
-    let scope = '';
+    let teacherId = null;
     if (req.authUser.role === 'teacher') {
-      const teacherId = await getTeacherIdForUser(req.authUser);
+      teacherId = await getTeacherIdForUser(req.authUser);
       if (!teacherId) return res.status(403).json({ error: 'Docente no asociado a una cuenta válida' });
-      scope = ' AND sub.teacher_id = ?';
-      params.push(teacherId);
     }
-    if (req.query.subjectId) {
-      scope += ' AND a.subject_id = ?';
-      params.push(req.query.subjectId);
-    }
+    const subjectId = req.query.subjectId || null;
     const [rows] = await pool.query(`
       SELECT a.id, a.student_id AS studentId, a.subject_id AS subjectId,
              a.progress AS percentage, a.progress, a.comments AS description,
-             a.comments, a.date, a.created_at AS createdAt,
+             a.comments, a.attendance, a.date, a.created_at AS createdAt,
              sub.name AS subjectName
       FROM avances a
       LEFT JOIN subjects sub ON sub.id = a.subject_id
-      WHERE a.student_id = ?${scope}
+      WHERE a.student_id = ?
+        AND (? IS NULL OR sub.teacher_id = ?)
+        AND (? IS NULL OR a.subject_id = ?)
       ORDER BY a.date DESC, a.created_at DESC
-    `, params);
+    `, [req.params.studentId, teacherId, teacherId, subjectId, subjectId]);
     res.json(rows);
   } catch (error) {
     console.error('Error loading advances:', error.message);
@@ -779,7 +1113,7 @@ app.get('/api/avances/estudiante/:studentId', authenticateRequest, async (req, r
 });
 
 app.post('/api/avances', authenticateRequest, async (req, res) => {
-  const { studentId, subjectId, percentage, progress: requestedProgress, description, comments, date } = req.body;
+  const { studentId, subjectId, percentage, progress: requestedProgress, description, comments, attendance, date } = req.body;
   const progress = Number(percentage ?? requestedProgress);
   const text = String(description ?? comments ?? '').trim();
 
@@ -806,12 +1140,12 @@ app.post('/api/avances', authenticateRequest, async (req, res) => {
     }
 
     const [result] = await pool.query(`
-      INSERT INTO avances (id, student_id, subject_id, teacher_id, course_id, progress, average, comments, date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_DATE))
-    `, [avanceId, studentId, subjectId, subject.teacherId, subject.courseId, progress, progress, text, date || null]);
+      INSERT INTO avances (id, student_id, subject_id, teacher_id, course_id, progress, average, comments, attendance, date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_DATE))
+    `, [avanceId, studentId, subjectId, subject.teacherId, subject.courseId, progress, progress, text, attendance === null || attendance === undefined ? null : Boolean(attendance), date || null]);
 
     const [[created]] = await pool.query(
-      'SELECT id, student_id AS studentId, subject_id AS subjectId, progress AS percentage, comments AS description, date FROM avances WHERE id = ?',
+      'SELECT id, student_id AS studentId, subject_id AS subjectId, progress AS percentage, comments AS description, attendance, date FROM avances WHERE id = ?',
       [avanceId]
     );
     res.status(201).json(created || { id: avanceId, studentId, subjectId, percentage: progress, description: text, date });
@@ -822,7 +1156,7 @@ app.post('/api/avances', authenticateRequest, async (req, res) => {
 });
 
 app.put('/api/avances/:id', authenticateRequest, async (req, res) => {
-  const { percentage, progress: requestedProgress, description, comments, date } = req.body;
+  const { percentage, progress: requestedProgress, description, comments, attendance, date } = req.body;
   const progress = Number(percentage ?? requestedProgress);
   const text = String(description ?? comments ?? '').trim();
 
@@ -855,11 +1189,11 @@ app.put('/api/avances/:id', authenticateRequest, async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE avances SET progress = ?, average = ?, comments = ?, date = COALESCE(?, date) WHERE id = ?',
-      [progress, progress, text, date || null, req.params.id]
+      'UPDATE avances SET progress = ?, average = ?, comments = ?, attendance = ?, date = COALESCE(?, date) WHERE id = ?',
+      [progress, progress, text, attendance === null || attendance === undefined ? null : Boolean(attendance), date || null, req.params.id]
     );
     const [[updated]] = await pool.query(
-      'SELECT id, student_id AS studentId, subject_id AS subjectId, progress AS percentage, progress, comments AS description, comments, date FROM avances WHERE id = ?',
+      'SELECT id, student_id AS studentId, subject_id AS subjectId, progress AS percentage, progress, comments AS description, comments, attendance, date FROM avances WHERE id = ?',
       [req.params.id]
     );
     res.json(updated);
@@ -932,6 +1266,23 @@ ${message}`;
   }
 });
 
-app.listen(port, () => {
-  console.log(`MySQL API listening on http://localhost:${port}`);
-});
+const ensureAttendanceColumn = async () => {
+  const [columns] = await pool.query('SHOW COLUMNS FROM avances LIKE "attendance"');
+  if (!columns.length) {
+    await pool.query('ALTER TABLE avances ADD COLUMN attendance TINYINT(1) NULL AFTER comments');
+    console.log('Columna de asistencia creada en avances');
+  }
+};
+
+if (require.main === module) {
+  ensureAttendanceColumn()
+    .then(() => app.listen(port, () => {
+      console.log(`MySQL API listening on http://localhost:${port}`);
+    }))
+    .catch((error) => {
+      console.error('No se pudo preparar la columna de asistencia:', error.message);
+      process.exitCode = 1;
+    });
+}
+
+module.exports = app;

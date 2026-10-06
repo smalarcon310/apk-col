@@ -10,6 +10,7 @@ import TeacherDashboard from './modules/TeacherDashboard';
 import { StudentsModule } from './modules/StudentsModule';
 import StudentDashboard from './components/StudentDashboard';
 import AnalysisModule from './modules/AnalysisModule';
+import GuardiansImportModule from './modules/GuardiansImportModule';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import RemoteAPIModule from './modules/RemoteAPIModule';
@@ -28,6 +29,10 @@ import './App.css';
 function App() {
   // Estado de autenticación y perfil
   const [currentTab, setCurrentTab] = useState(null);
+  // Pestaña activa antes de una recarga de la página (solo se lee al montar).
+  const [savedTab] = useState(() => {
+    try { return sessionStorage.getItem('currentTab'); } catch { return null; }
+  });
   const [currentProfile, setCurrentProfile] = useState(null);
   const [, setShowLogin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -69,11 +74,27 @@ function App() {
     try { navigate('/', { replace: true }); } catch (e) {}
   };
 
+  useEffect(() => {
+    try {
+      if (currentTab) sessionStorage.setItem('currentTab', currentTab);
+      else sessionStorage.removeItem('currentTab');
+    } catch (e) {}
+  }, [currentTab]);
+
+  // Pestañas que cada rol puede ver (igual que el filtro del Navbar).
+  const isTabAllowed = (role, tab) => {
+    if (!tab) return false;
+    if (role === 'rector') return tab !== 'teacher';
+    if (role === 'teacher') return ['teacher', 'subjects', 'students'].includes(tab);
+    return tab === 'students';
+  };
+
   // Restaurar la sesión local guardada por la API MySQL.
   useEffect(() => {
     let unsub = () => {};
     let isMounted = true;
     let authFallbackTimer = null;
+    const roleResolutionTimers = new Set();
 
     const resolveRole = async (user) => {
       if (!user) return null;
@@ -191,24 +212,29 @@ function App() {
           }
 
           // Usar Promise.race para agregar timeout de 10 segundos
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout resolviendo rol')), 10000)
-          );
-
           if (isMounted) {
             setShowLogin(false);
             setAuthLoading(true);
           }
 
-          const profile = await Promise.race([
-            resolveRole(user),
-            timeoutPromise
-          ]);
+          let roleResolutionTimer;
+          const timeoutPromise = new Promise((_, reject) => {
+            roleResolutionTimer = setTimeout(() => reject(new Error('Timeout resolviendo rol')), 10000);
+            roleResolutionTimers.add(roleResolutionTimer);
+          });
+          let profile;
+          try {
+            profile = await Promise.race([resolveRole(user), timeoutPromise]);
+          } finally {
+            clearTimeout(roleResolutionTimer);
+            roleResolutionTimers.delete(roleResolutionTimer);
+          }
 
           if (isMounted) {
             setCurrentProfile(profile);
-            // Navegar según rol
-            if (profile?.role === 'rector') setCurrentTab('rector');
+            // Volver a la pestaña en la que estaba; si no aplica, la inicial del rol
+            if (isTabAllowed(profile?.role, savedTab)) setCurrentTab(savedTab);
+            else if (profile?.role === 'rector') setCurrentTab('rector');
             else if (profile?.role === 'teacher') setCurrentTab('teacher');
             else setCurrentTab('students');
             setAuthLoading(false);
@@ -240,14 +266,18 @@ function App() {
     };
 
     checkConnection();
-    window.addEventListener('online', () => setConnectionError(null));
-    window.addEventListener('offline', () => setConnectionError('Sin conexión a internet'));
+    const handleOnline = () => setConnectionError(null);
+    const handleOffline = () => setConnectionError('Sin conexión a internet');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     return () => {
       isMounted = false;
       if (authFallbackTimer) clearTimeout(authFallbackTimer);
-      window.removeEventListener('online', () => {});
-      window.removeEventListener('offline', () => {});
+      roleResolutionTimers.forEach(clearTimeout);
+      roleResolutionTimers.clear();
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       try { unsub(); } catch (e) {}
     };
   }, []);
@@ -281,6 +311,7 @@ function App() {
               ) : (
                 <>
                   {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
+                  {currentTab === 'guardians' && currentProfile?.role === 'rector' && <GuardiansImportModule />}
                   {currentTab === 'analysis' && currentProfile?.role === 'rector' && <AnalysisModule />}
                   {currentTab === 'students' && <StudentsModule currentProfile={currentProfile} />}
                   {currentTab === 'teacher' && currentProfile?.role === 'teacher' && <TeacherDashboard initialTeacherId={currentProfile.teacherId} currentProfile={currentProfile} />}

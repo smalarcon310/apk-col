@@ -19,7 +19,6 @@ const RegisterPage = ({ onRegisterSuccess }) => {
   const [phone, setPhone] = useState('');
   const [emailExists, setEmailExists] = useState(false);
   const [resetSent, setResetSent] = useState(false);
-  const [role, setRole] = useState('student');
   const [studentMatch, setStudentMatch] = useState(null);
 
   // whenever the cédula changes we check for existing student
@@ -28,14 +27,12 @@ const RegisterPage = ({ onRegisterSuccess }) => {
     const check = async () => {
       if (!documentId) {
         setStudentMatch(null);
-        setRole('student');
         return;
       }
       try {
         const s = await getStudentByDocument(documentId);
         if (!active) return;
         setStudentMatch(s);
-        setRole('student');
       } catch (e) {
         console.warn('Error buscando estudiante por cédula:', e);
       }
@@ -62,31 +59,24 @@ const RegisterPage = ({ onRegisterSuccess }) => {
         firstName,
         lastName,
         cedula: documentId,
-        role,
+        role: 'guardian',
       });
       // Build extra profile data
       const extra = { firstName, lastName, documentId, phone, studentId: user.studentId || null };
 
-      // Create associated academic profile depending on role
+      // A public registration always creates a guardian linked to the student
+      // identified by the supplied document.
       try {
-        if (role === 'student') {
-          extra.studentId = studentMatch.id;
-        } else if (role === 'guardian') {
-          const child = await getStudentByDocument(documentId);
-          if (child) {
-            extra.studentId = child.id;
-            extra.studentDocumentId = documentId;
-          } else {
-            console.warn('No se encontró estudiante con cédula', documentId);
-          }
-        }
+        const child = await getStudentByDocument(documentId);
+        extra.studentId = child?.id || studentMatch.id;
+        extra.studentDocumentId = documentId;
       } catch (e) {
         console.warn('Advertencia al crear perfil:', e.message);
       }
 
       setSuccess(user.message || 'Cuenta creada correctamente');
       window.setTimeout(() => {
-        onRegisterSuccess && onRegisterSuccess(user, role, extra);
+        onRegisterSuccess && onRegisterSuccess(user, 'guardian', extra);
         navigate('/', { replace: true });
       }, 1200);
     } catch (err) {

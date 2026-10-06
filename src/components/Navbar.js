@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Users, BookOpen, BookMarked, LayoutDashboard, BarChart3 } from 'lucide-react';
+import { Users, BookOpen, BookMarked, LayoutDashboard, BarChart3, UserPlus } from 'lucide-react';
 import getAssetPath from '../utils/assetPath';
 
 /**
@@ -14,6 +14,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
 
   const allTabs = [
     { id: 'rector', label: 'Rector', icon: LayoutDashboard },
+    { id: 'guardians', label: 'Padres de familia', icon: UserPlus },
     { id: 'analysis', label: 'Análisis', icon: BarChart3 },
     { id: 'students', label: 'Estudiante', icon: Users },
     { id: 'teacher', label: 'Docente', icon: Users },
@@ -43,7 +44,7 @@ export const Navbar = ({ currentTab, onTabChange, currentProfile, onProfileChang
       return t.id !== 'teacher';
     }
     // Otros roles por defecto ven todas las pestañas excepto la docente
-    return t.id !== 'teacher';
+    return t.id !== 'teacher' && t.id !== 'guardians';
   });
 
 

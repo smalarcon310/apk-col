@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS subjects (
 CREATE TABLE IF NOT EXISTS avances (
   id CHAR(36) PRIMARY KEY, student_id CHAR(36) NOT NULL, subject_id CHAR(36) NOT NULL,
   teacher_id CHAR(36) NOT NULL, course_id CHAR(36) NOT NULL, progress DECIMAL(5,2) NOT NULL,
-  average DECIMAL(5,2) NOT NULL, comments TEXT, date DATE NOT NULL,
+  average DECIMAL(5,2) NOT NULL, comments TEXT, attendance TINYINT(1) NULL, date DATE NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT chk_avances_progress CHECK (progress BETWEEN 0 AND 100),
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS guardians (
 
 CREATE TABLE IF NOT EXISTS users (
   id CHAR(36) PRIMARY KEY, cedula VARCHAR(20) NOT NULL UNIQUE, email VARCHAR(255) NOT NULL UNIQUE,
-  name VARCHAR(100) NOT NULL, last_name VARCHAR(150), password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(100) NOT NULL, last_name VARCHAR(150), phone VARCHAR(15), password_hash VARCHAR(255) NOT NULL,
   role ENUM('student','guardian','teacher','rector') NOT NULL DEFAULT 'student',
   grade ENUM('6','7','8','9','10','11'), subject_progress JSON NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

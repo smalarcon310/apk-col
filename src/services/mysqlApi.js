@@ -1,4 +1,5 @@
-const configuredApiUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3002';
+const configuredApiUrl = process.env.REACT_APP_API_BASE_URL
+  ?? (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3002');
 const API_BASE_URL = configuredApiUrl.replace('localhost', window.location.hostname);
 
 export async function mysqlRequest(endpoint, options = {}) {

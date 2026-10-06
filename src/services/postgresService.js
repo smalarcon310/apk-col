@@ -7,12 +7,17 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+const dbPassword = process.env.DB_PASSWORD;
+if (!dbPassword) {
+  throw new Error('DB_PASSWORD debe estar configurada para conectar a PostgreSQL');
+}
+
 // Crear pool de conexiones
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'password',
+  password: dbPassword,
   database: process.env.DB_NAME || 'serma_db',
   max: 20,
   idleTimeoutMillis: 30000,
