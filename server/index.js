@@ -181,7 +181,7 @@ app.get('/health', async (_req, res) => {
     res.json({ status: 'ok', database: 'mysql' });
   } catch (error) {
     console.error('MySQL health check failed:', error.message);
-    res.status(503).json({ status: 'error', database: 'mysql' });
+    res.status(503).json({ status: 'error', database: 'mysql', code: error.code || 'UNKNOWN' });
   }
 });
 
