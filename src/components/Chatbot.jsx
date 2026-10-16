@@ -13,6 +13,7 @@ const quickQuestions = [
   { label: 'Avance por materia', message: '¿Cuánto avance llevo en cada materia?' },
   { label: 'Cómo usar SERMA', message: '¿Cómo puedo consultar y actualizar mis avances en SERMA?' },
   { label: 'Metodología FRE', message: '¿Qué es la metodología FRE?' },
+  { label: 'Declaración persona transhumana', message: '¿Qué propone la Declaración Persona Transhumana?' },
 ];
 
 export default function Chatbot() {
