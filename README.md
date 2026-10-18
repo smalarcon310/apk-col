@@ -2,6 +2,12 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Crear una cuenta de rector
+
+Inicia sesión con una cuenta que ya tenga rol `rector` o `admin` y selecciona la pestaña **Crear rector**. Completa nombre, apellido, cédula, correo, celular y una contraseña de al menos 8 caracteres. La nueva cuenta podrá iniciar sesión con ese correo y contraseña.
+
+El registro público no permite asignar roles administrativos. Si todavía no existe ninguna cuenta `rector` o `admin`, la primera debe habilitarse mediante el proceso administrativo de la base de datos.
+
 ## Available Scripts
 
 In the project directory, you can run:

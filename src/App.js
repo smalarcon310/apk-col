@@ -11,6 +11,7 @@ import { StudentsModule } from './modules/StudentsModule';
 import StudentDashboard from './components/StudentDashboard';
 import AnalysisModule from './modules/AnalysisModule';
 import GuardiansImportModule from './modules/GuardiansImportModule';
+import RectorAccountsModule from './modules/RectorAccountsModule';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import RemoteAPIModule from './modules/RemoteAPIModule';
@@ -85,6 +86,7 @@ function App() {
   const isTabAllowed = (role, tab) => {
     if (!tab) return false;
     if (role === 'rector') return tab !== 'teacher';
+    if (role === 'admin') return tab !== 'teacher' && tab !== 'guardians';
     if (role === 'teacher') return ['teacher', 'subjects', 'students'].includes(tab);
     return tab === 'students';
   };
@@ -311,6 +313,7 @@ function App() {
               ) : (
                 <>
                   {currentTab === 'rector' && <RectorDashboard currentProfile={currentProfile} />}
+                  {currentTab === 'rectors' && ['rector', 'admin'].includes(currentProfile?.role) && <RectorAccountsModule />}
                   {currentTab === 'guardians' && currentProfile?.role === 'rector' && <GuardiansImportModule />}
                   {currentTab === 'analysis' && currentProfile?.role === 'rector' && <AnalysisModule />}
                   {currentTab === 'students' && <StudentsModule currentProfile={currentProfile} />}

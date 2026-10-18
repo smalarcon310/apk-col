@@ -353,6 +353,48 @@ app.post('/api/docentes', authenticateRequest, requireRoles('rector', 'admin'), 
   }
 });
 
+app.post('/api/rectores', authenticateRequest, requireRoles('rector', 'admin'), async (req, res) => {
+  const firstName = String(req.body.firstName || '').trim();
+  const lastName = String(req.body.lastName || '').trim();
+  const documentId = String(req.body.documentId || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const phone = String(req.body.phone || '').trim();
+  const password = String(req.body.password || '');
+
+  if (!firstName || !lastName || !documentId || !email || !phone || !password) {
+    return res.status(400).json({ error: 'Nombre, apellido, documento, correo, teléfono y contraseña son obligatorios' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'El correo electrónico no es válido' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  }
+
+  try {
+    const id = randomUUID();
+    await pool.query(
+      'INSERT INTO users (id, cedula, email, name, last_name, phone, password_hash, role, subject_progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, JSON_OBJECT())',
+      [id, documentId, email, firstName, lastName, phone, hashPassword(password), 'rector']
+    );
+    return res.status(201).json({
+      id,
+      firstName,
+      lastName,
+      documentId,
+      email,
+      phone,
+      role: 'rector',
+    });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'El correo o documento ya está registrado' });
+    }
+    console.error('Error creating rector:', error.message);
+    return res.status(500).json({ error: 'No se pudo crear la cuenta de rector' });
+  }
+});
+
 app.delete('/api/docentes/:id', authenticateRequest, requireRoles('rector', 'admin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM teachers WHERE id = ?', [req.params.id]);
