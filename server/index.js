@@ -1265,15 +1265,31 @@ app.put('/api/avances/:id', authenticateRequest, async (req, res) => {
 });
 
 app.post('/api/chat', authenticateRequest, async (req, res) => {
+  const replyLanguage = req.body?.language === 'en' ? 'English' : 'Spanish';
+  const errors = replyLanguage === 'English'
+    ? {
+      invalidMessage: 'A message is required and must be no longer than 2000 characters.',
+      notConfigured: 'The assistant is not configured. Set GOOGLE_API_KEY on the server.',
+      busy: 'The assistant is temporarily busy. Please try again in a few seconds.',
+      emptyReply: 'The assistant returned an empty response.',
+      failed: 'Could not generate the assistant response.',
+    }
+    : {
+      invalidMessage: 'El mensaje es obligatorio y debe tener máximo 2000 caracteres',
+      notConfigured: 'El asistente no está configurado. Define GOOGLE_API_KEY en el servidor.',
+      busy: 'El asistente está temporalmente ocupado. Intenta de nuevo en unos segundos.',
+      emptyReply: 'El asistente devolvió una respuesta vacía',
+      failed: 'No se pudo generar la respuesta del asistente',
+    };
   const apiKey = String(process.env.GOOGLE_API_KEY || '').trim();
   const configuredModel = String(process.env.GEMINI_MODEL || 'gemini-flash-lite-latest').trim();
   const models = [...new Set([configuredModel, 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'])];
   const message = String(req.body?.message || '').trim();
   if (!message || message.length > 2000) {
-    return res.status(400).json({ error: 'El mensaje es obligatorio y debe tener máximo 2000 caracteres' });
+    return res.status(400).json({ error: errors.invalidMessage });
   }
   if (!apiKey) {
-    return res.status(503).json({ error: 'El asistente no está configurado. Define GOOGLE_API_KEY en el servidor.' });
+    return res.status(503).json({ error: errors.notConfigured });
   }
 
   try {
@@ -1282,7 +1298,6 @@ app.post('/api/chat', authenticateRequest, async (req, res) => {
       .filter((item) => item && ['user', 'model'].includes(item.role) && typeof item.text === 'string')
       .slice(-8)
       .map((item) => ({ role: item.role, parts: [{ text: item.text.slice(0, 2000) }] })) : [];
-    const replyLanguage = req.body?.language === 'en' ? 'English' : 'Spanish';
     const languageRule = `MANDATORY: write the entire reply in ${replyLanguage}, regardless of the language of this prompt or of the context data. Do not use any other language.`;
     const prompt = `${languageRule}
 
@@ -1339,14 +1354,14 @@ ${languageRule}`;
     }
     if (!data.candidates?.length) {
       console.error('All Gemini chat models failed');
-      return res.status(lastStatus >= 400 ? 502 : lastStatus).json({ error: 'El asistente está temporalmente ocupado. Intenta de nuevo en unos segundos.' });
+      return res.status(lastStatus >= 400 ? 502 : lastStatus).json({ error: errors.busy });
     }
     const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim();
-    if (!reply) return res.status(502).json({ error: 'El asistente devolvió una respuesta vacía' });
+    if (!reply) return res.status(502).json({ error: errors.emptyReply });
     return res.json({ reply });
   } catch (error) {
     console.error('Error generating chatbot response:', error.message);
-    return res.status(500).json({ error: 'No se pudo generar la respuesta del asistente' });
+    return res.status(500).json({ error: errors.failed });
   }
 });
 
