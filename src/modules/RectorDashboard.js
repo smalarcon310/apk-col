@@ -3,7 +3,7 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import { getAllStudents } from '../services/studentService';
 import { getAllCourses } from '../services/courseService';
 import { getAllSubjects } from '../services/subjectService';
-import { getLatestAdvanceForStudentSubject } from '../services/avanceService';
+import { getLatestAdvances } from '../services/avanceService';
 
 export const RectorDashboard = ({ currentProfile }) => {
   const [studentsCount, setStudentsCount] = useState(0);
@@ -47,21 +47,19 @@ export const RectorDashboard = ({ currentProfile }) => {
         // Calculate advances-based metrics
         try {
           // For each student, compute average of their latest advances across subjects
-          const studentMetrics = await Promise.all(students.map(async (st) => {
-            // fetch latest advance for each subject in parallel
-            const perSubject = await Promise.all(subjects.map(async (subj) => {
-              try {
-                const latest = await getLatestAdvanceForStudentSubject(st.id, subj.id);
-                return latest ? Number(latest.average || 0) : null;
-              } catch (e) {
-                return null;
-              }
-            }));
-
-            const vals = perSubject.filter((v) => v !== null && !Number.isNaN(v));
+          const latestAdvances = await getLatestAdvances();
+          const valuesByStudent = new Map();
+          latestAdvances.forEach((adv) => {
+            const value = Number(adv.average ?? adv.progress);
+            if (Number.isNaN(value)) return;
+            if (!valuesByStudent.has(adv.studentId)) valuesByStudent.set(adv.studentId, []);
+            valuesByStudent.get(adv.studentId).push(value);
+          });
+          const studentMetrics = students.map((st) => {
+            const vals = valuesByStudent.get(st.id) || [];
             const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
             return { studentId: st.id, overall, perSubject: vals };
-          }));
+          });
 
           const withData = studentMetrics.filter((m) => m.overall !== null);
           const avgs = withData.map((m) => m.overall);

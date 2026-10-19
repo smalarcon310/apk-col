@@ -16,7 +16,7 @@ import {
 import { getAllStudents } from '../services/studentService';
 import { getAllCourses } from '../services/courseService';
 import { getAllSubjects } from '../services/subjectService';
-import { getLatestAdvanceForStudentSubject } from '../services/avanceService';
+import { getLatestAdvances } from '../services/avanceService';
 import LoadingScreen from '../components/LoadingScreen';
 
 const BLUE = '#2563eb';
@@ -43,15 +43,17 @@ const AnalysisModule = () => {
         getAllCourses(),
         getAllSubjects(),
       ]);
-      const rows = await Promise.all(studentRows.flatMap((student) => {
+      const latestAdvances = await getLatestAdvances();
+      const latestByKey = new Map(latestAdvances.map((adv) => [`${adv.studentId}|${adv.subjectId}`, adv]));
+      const rows = studentRows.flatMap((student) => {
         const studentCourseId = String(student.courseId ?? student.course_id ?? '');
         return subjectRows
           .filter((subject) => {
             const subjectCourseId = String(subject.courseId ?? subject.course_id ?? '');
             return studentCourseId && subjectCourseId === studentCourseId;
           })
-          .map(async (subject) => {
-            const advance = await getLatestAdvanceForStudentSubject(student.id, subject.id);
+          .map((subject) => {
+            const advance = latestByKey.get(`${student.id}|${subject.id}`);
             return {
               student,
               subject,
@@ -60,7 +62,7 @@ const AnalysisModule = () => {
               comment: advance?.comments || advance?.comment || '',
             };
           });
-      }));
+      });
       setStudents(studentRows);
       setCourses(courseRows);
       setAdvances(rows);
